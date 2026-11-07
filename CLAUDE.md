@@ -11,7 +11,8 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 
 ## Stack (fixed)
 - Java 21, Spring Boot 3.5.x, Spring Cloud 2025.0.x, Maven monorepo (root pom + one module per service)
-- PostgreSQL + PostGIS, one DB per service, Flyway from V1, `ddl-auto: validate` only
+- PostgreSQL + PostGIS, one DB per service, Flyway owns the schema (V1, V2, ... never edit an applied one)
+- Persistence: Spring `JdbcClient` with explicit SQL in `infrastructure` (no JPA/Hibernate: tstzrange, PostGIS and conditional `UPDATE ... WHERE status AND version` writes stay simple). Domain objects are mapped by hand.
 - Kafka (KRaft), Redis (cache, rate limit), Spring Cloud Gateway
 - Spring Security + JWT RS256: Identity signs, everyone else verifies via JWKS
 - Search: OpenSearch behind an interface (PostGIS-backed implementation allowed first)
@@ -43,11 +44,12 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 ## Module map
 | Path | Purpose | Status |
 |---|---|---|
-| `shared/common-events` | Event envelope + versioned payload records/JSON Schemas | skeleton |
-| `shared/common-web` | ProblemDetail handling, pagination, correlation ID | skeleton |
-| `shared/common-security` | JWT resource-server config, principal helpers | skeleton |
-| `services/gateway` | Spring Cloud Gateway: routing, JWT check, rate limit | planned (phase 2) |
-| `services/identity` | Accounts, roles, tokens | planned (phase 2) |
+| `shared/common-events` | Event envelope, catalog, 38 versioned payload records + JSON Schemas | done |
+| `shared/common-web` | ProblemDetail handling, cursor paging, correlation ID | done |
+| `shared/common-security` | RS256 JWT validation, roles, CurrentAccount, 401/403 problems | done |
+| `services/gateway` (:8080) | Spring Cloud Gateway: routing, edge JWT check, Redis rate limits | done |
+| `services/identity` (:8081) | Accounts, roles, tokens, verification (reference service) | done |
+| `tools/contract-validation` | Build gate: OpenAPI contracts parse and follow conventions | done |
 | `services/profile` | Profiles, vehicles, payout tokens, notification prefs | planned (phase 3) |
 | `services/listing` | Listings, photos, availability, moderation log | planned (phase 4) |
 | `services/booking` | Booking state machine, exclusion constraint, saga | planned (phase 5) |
@@ -66,7 +68,8 @@ New service: `/new-service <name>`. Verify: `/verify-service <name>`. Close a ph
 - One service: `./mvnw -pl services/<name> -am verify`
 - Everything: `./mvnw verify`  ·  Fix formatting: `./mvnw spotless:apply`
 - Local infra: `cp .env.example .env` (fill values), then `docker compose --env-file .env -f infra/docker-compose.yml up -d` (add `--profile search` for OpenSearch)
-- Docker Desktop must be running for Testcontainers tests
+- Docker Desktop must be running for Testcontainers tests. `*Test` = unit (surefire), `*IT` = integration (failsafe, runs in `verify`)
+- Run a service locally: `java -jar services/<name>/target/<name>-service-0.1.0-SNAPSHOT.jar --spring.profiles.active=local` from the repo root (reads the root env file). Ports: gateway 8080, identity 8081, profile 8082, listing 8083, booking 8084, payment 8085, search 8086
 
 ## Work order per service
 Flyway migration → domain model + state machine + unit tests → repository + Testcontainers tests → application service → controller + validation + ProblemDetail → outbox events → ownership/403 tests → contract tests → Dockerfile.

@@ -11,7 +11,7 @@ Verify the service `$ARGUMENTS`.
    - `architect` — boundaries, ownership checks, saga/idempotency, OpenAPI vs implementation
    - `security-reviewer` — authn/authz, validation, secrets, PII, uploads, injection
    - `code-reviewer` — correctness, transactions, N+1, indexes, error handling
-4. **Check hard rules yourself** (quick greps): no imports of other services' packages; no `ddl-auto` other than `validate`; no hardcoded hosts/passwords in `src/main/resources`; every `@PostMapping|@PutMapping|@PatchMapping|@DeleteMapping` controller has a matching 403 test; commits on this branch have no attribution trailers (`git log main..HEAD --format=%B | grep -iE "co-authored-by|generated with"` must be empty).
+4. **Check hard rules yourself** (quick greps): no imports of other services' packages; no JPA/Hibernate dependency (persistence is JdbcClient + Flyway); no hardcoded hosts/passwords in `src/main/resources`; every `@PostMapping|@PutMapping|@PatchMapping|@DeleteMapping` controller has a matching 403 test; commits on this branch have no attribution trailers (`git log main..HEAD --format=%B | grep -iE "co-authored-by|generated with"` must be empty).
 5. **Summarize** in this shape:
    - Build: PASS/FAIL (tests run / failed)
    - Blockers (must fix before merge) — merged and de-duplicated across reviewers, with file:line

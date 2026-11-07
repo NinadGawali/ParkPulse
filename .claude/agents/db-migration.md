@@ -15,7 +15,7 @@ You own database migrations for ParkSmart services.
 - Every query pattern in the service gets a supporting index; geo columns get GiST; partial indexes for soft-deleted rows (`WHERE deleted_at IS NULL`).
 - Money is NUMERIC, timestamps are TIMESTAMPTZ, IDs are UUID (`gen_random_uuid()`).
 - Outbox and processed-event tables belong in the owning service's migrations.
-- Hibernate runs with `ddl-auto=validate`; entity mappings must match.
+- Persistence is Spring JdbcClient with explicit SQL (no JPA). Column names in the migration must match the SQL in the service repositories.
 
 ## Verification (required)
 Write or update a Testcontainers test using image `postgis/postgis:17-3.7` that runs Flyway from clean and asserts key constraints (for Booking: two overlapping active bookings on one listing fail with an exclusion violation; a cancelled one does not block). Run `./mvnw -pl services/<name> -am verify` and report the result.
