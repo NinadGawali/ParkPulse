@@ -12,7 +12,7 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 ## Stack (fixed)
 - Java 21, Spring Boot 3.5.x, Spring Cloud 2025.0.x, Maven monorepo (root pom + one module per service)
 - PostgreSQL + PostGIS, one DB per service, Flyway owns the schema (V1, V2, ... never edit an applied one)
-- Persistence: Spring `JdbcClient` with explicit SQL in `infrastructure` (no JPA/Hibernate: tstzrange, PostGIS and conditional `UPDATE ... WHERE status AND version` writes stay simple). Domain objects are mapped by hand.
+- Persistence: Spring Data JPA (Hibernate, `ddl-auto: validate`) with `@Entity` classes only in `infrastructure.persistence`, mapped by hand to the pure domain; `@Version` for optimistic locking. Use native SQL / `JdbcClient` where JPA is awkward (outbox, processed_events, tstzrange exclusion constraints, PostGIS, conditional `UPDATE ... WHERE status = ?`). `services/profile` is the JPA reference; `services/identity` predates this and stays on `JdbcClient`.
 - Kafka (KRaft), Redis (cache, rate limit), Spring Cloud Gateway
 - Spring Security + JWT RS256: Identity signs, everyone else verifies via JWKS
 - Search: OpenSearch behind an interface (PostGIS-backed implementation allowed first)
@@ -50,7 +50,7 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 | `services/gateway` (:8080) | Spring Cloud Gateway: routing, edge JWT check, Redis rate limits | done |
 | `services/identity` (:8081) | Accounts, roles, tokens, verification (reference service) | done |
 | `tools/contract-validation` | Build gate: OpenAPI contracts parse and follow conventions | done |
-| `services/profile` | Profiles, vehicles, payout tokens, notification prefs | planned (phase 3) |
+| `services/profile` (:8082) | Profiles, photos, vehicles, payout tokens, notification prefs (JPA reference) | done |
 | `services/listing` | Listings, photos, availability, moderation log | planned (phase 4) |
 | `services/booking` | Booking state machine, exclusion constraint, saga | planned (phase 5) |
 | `services/payment` | Intents, ledger, commission rules, payouts | planned (phase 6) |

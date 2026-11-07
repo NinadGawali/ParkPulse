@@ -13,7 +13,7 @@ Read CLAUDE.md, docs/PROGRESS.md, the service's section in docs/ParkSmart-Servic
 ## Order of work (commit after each green step, Conventional Commits, no attribution trailers)
 1. Flyway migration `src/main/resources/db/migration/V1__init.sql` (schema from the docs; Flyway owns the schema)
 2. Domain model + state machine with plain-Java unit tests (domain has zero Spring/JPA/Jackson imports)
-3. JdbcClient repositories in infrastructure (explicit SQL, hand mapping to domain objects) + Testcontainers (postgis/postgis) tests. Follow services/identity as the reference implementation.
+3. Spring Data JPA entities + repositories in `infrastructure.persistence`, adapters mapping by hand to domain objects (`ddl-auto: validate`, `@Version`); native SQL / JdbcClient for outbox, processed_events and anything JPA handles poorly (tstzrange, PostGIS, conditional status updates). Testcontainers (postgis/postgis) tests. Follow services/profile as the reference implementation.
 4. Application services (transactions, ownership checks against the JWT principal)
 5. Controllers + request/response DTOs + Bean Validation + RFC 7807 ProblemDetail
 6. Events via transactional outbox (outbox table in the same migration set); idempotent consumers with processed_events table and a `.DLT` topic
