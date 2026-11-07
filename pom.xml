@@ -25,6 +25,7 @@
     <module>tools/contract-validation</module>
     <module>services/identity</module>
     <module>services/gateway</module>
+    <module>services/profile</module>
     <!-- services/<name> modules are added by /new-service -->
   </modules>
 
@@ -40,6 +41,7 @@
     <!-- Test JVMs (surefire + failsafe) run in UTC regardless of the host time zone. -->
     <argLine>-Duser.timezone=UTC</argLine>
     <bouncycastle.version>1.86</bouncycastle.version>
+    <awssdk.version>2.56.0</awssdk.version>
   </properties>
 
   <dependencyManagement>
@@ -48,6 +50,13 @@
         <groupId>org.springframework.cloud</groupId>
         <artifactId>spring-cloud-dependencies</artifactId>
         <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${awssdk.version}</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
