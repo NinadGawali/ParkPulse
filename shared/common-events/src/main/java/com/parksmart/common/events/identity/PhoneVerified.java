@@ -5,11 +5,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * The account's phone (E.164) was verified. Consumed by Listing (host eligibility) and Notification
- * (SMS destination).
+ * The account's phone was verified. Feeds Listing's host-eligibility projection. The number itself
+ * is only on Topics.IDENTITY_PRIVATE.
  */
-public record PhoneVerified(UUID accountId, String phone, Instant verifiedAt)
-    implements EventPayload {
+public record PhoneVerified(UUID accountId, Instant verifiedAt) implements EventPayload {
 
   @Override
   public String partitionKey() {

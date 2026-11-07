@@ -6,10 +6,10 @@ public final class Topics {
   public static final String IDENTITY_ACCOUNT = "identity.account.v1";
 
   /**
-   * Carries one-time verification codes and reset tokens to Notification Service only. Short
-   * retention, restricted ACLs; never consumed by any other service.
+   * Contact details and one-time codes for Notification Service only. Short retention, restricted
+   * ACLs; never consumed by any other service.
    */
-  public static final String IDENTITY_VERIFICATION_DELIVERY = "identity.verification-delivery.v1";
+  public static final String IDENTITY_PRIVATE = "identity.private.v1";
 
   public static final String PROFILE = "profile.profile.v1";
   public static final String LISTING = "listing.listing.v1";

@@ -4,8 +4,14 @@ import com.parksmart.common.events.EventPayload;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Authorization released without capture. */
-public record PaymentVoided(UUID intentId, UUID bookingId, String reason, Instant voidedAt)
+/** Authorization released without capture (full refund of a hold). */
+public record PaymentVoided(
+    UUID intentId,
+    UUID bookingId,
+    UUID driverAccountId,
+    UUID hostAccountId,
+    String reason,
+    Instant voidedAt)
     implements EventPayload {
 
   @Override

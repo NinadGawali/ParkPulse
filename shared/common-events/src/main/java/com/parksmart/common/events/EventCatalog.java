@@ -11,7 +11,9 @@ import com.parksmart.common.events.booking.BookingNoShow;
 import com.parksmart.common.events.booking.BookingRequested;
 import com.parksmart.common.events.identity.AccountRegistered;
 import com.parksmart.common.events.identity.AccountSuspended;
+import com.parksmart.common.events.identity.ContactDetailsChanged;
 import com.parksmart.common.events.identity.EmailVerified;
+import com.parksmart.common.events.identity.PhoneUnverified;
 import com.parksmart.common.events.identity.PhoneVerified;
 import com.parksmart.common.events.identity.RoleGranted;
 import com.parksmart.common.events.identity.VerificationCodeIssued;
@@ -24,6 +26,7 @@ import com.parksmart.common.events.listing.ListingRejected;
 import com.parksmart.common.events.listing.ListingSubmittedForReview;
 import com.parksmart.common.events.listing.ListingUpdated;
 import com.parksmart.common.events.payment.PaymentAuthorized;
+import com.parksmart.common.events.payment.PaymentCaptureFailed;
 import com.parksmart.common.events.payment.PaymentCaptured;
 import com.parksmart.common.events.payment.PaymentFailed;
 import com.parksmart.common.events.payment.PaymentRefunded;
@@ -49,9 +52,11 @@ public final class EventCatalog {
           v1(AccountRegistered.class, Topics.IDENTITY_ACCOUNT),
           v1(EmailVerified.class, Topics.IDENTITY_ACCOUNT),
           v1(PhoneVerified.class, Topics.IDENTITY_ACCOUNT),
+          v1(PhoneUnverified.class, Topics.IDENTITY_ACCOUNT),
           v1(RoleGranted.class, Topics.IDENTITY_ACCOUNT),
           v1(AccountSuspended.class, Topics.IDENTITY_ACCOUNT),
-          v1(VerificationCodeIssued.class, Topics.IDENTITY_VERIFICATION_DELIVERY),
+          v1(VerificationCodeIssued.class, Topics.IDENTITY_PRIVATE),
+          v1(ContactDetailsChanged.class, Topics.IDENTITY_PRIVATE),
           v1(ProfileUpdated.class, Topics.PROFILE),
           v1(VehicleAdded.class, Topics.PROFILE),
           v1(VehicleRemoved.class, Topics.PROFILE),
@@ -75,6 +80,7 @@ public final class EventCatalog {
           v1(PaymentAuthorized.class, Topics.PAYMENT),
           v1(PaymentFailed.class, Topics.PAYMENT),
           v1(PaymentCaptured.class, Topics.PAYMENT),
+          v1(PaymentCaptureFailed.class, Topics.PAYMENT),
           v1(PaymentVoided.class, Topics.PAYMENT),
           v1(PaymentRefunded.class, Topics.PAYMENT),
           v1(PayoutCompleted.class, Topics.PAYOUT),

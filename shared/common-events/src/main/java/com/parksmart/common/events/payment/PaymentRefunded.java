@@ -5,10 +5,15 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Refund issued; totalRefunded is cumulative for the intent. */
+/**
+ * Refund issued; totalRefunded is cumulative for the intent. Commission and host share are reversed
+ * pro rata.
+ */
 public record PaymentRefunded(
     UUID intentId,
     UUID bookingId,
+    UUID driverAccountId,
+    UUID hostAccountId,
     BigDecimal refundAmount,
     BigDecimal totalRefunded,
     String currency,

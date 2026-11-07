@@ -8,6 +8,14 @@
     "currency" : {
       "type" : "string"
     },
+    "driverAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
     "intentId" : {
       "type" : "string",
       "format" : "uuid"
@@ -23,7 +31,7 @@
       "type" : "string"
     }
   },
-  "required" : [ "bookingId", "currency", "intentId", "refundAmount", "refundedAt", "totalRefunded" ],
+  "required" : [ "bookingId", "currency", "driverAccountId", "hostAccountId", "intentId", "refundAmount", "refundedAt", "totalRefunded" ],
   "additionalProperties" : false,
   "$id" : "https://parksmart.dev/event-schemas/payment.payment.v1/PaymentRefunded.v1.schema.json",
   "title" : "PaymentRefunded v1",

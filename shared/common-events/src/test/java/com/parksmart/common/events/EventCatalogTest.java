@@ -31,7 +31,7 @@ class EventCatalogTest {
     Set<String> knownTopics =
         Set.of(
             Topics.IDENTITY_ACCOUNT,
-            Topics.IDENTITY_VERIFICATION_DELIVERY,
+            Topics.IDENTITY_PRIVATE,
             Topics.PROFILE,
             Topics.LISTING,
             Topics.BOOKING,

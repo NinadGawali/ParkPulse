@@ -9,6 +9,7 @@ import java.util.UUID;
 public record PaymentCaptured(
     UUID intentId,
     UUID bookingId,
+    UUID driverAccountId,
     UUID hostAccountId,
     BigDecimal amount,
     BigDecimal commissionAmount,

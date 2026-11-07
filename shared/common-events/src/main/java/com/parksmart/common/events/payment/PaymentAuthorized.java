@@ -7,7 +7,13 @@ import java.util.UUID;
 
 /** Funds held for the booking. Booking moves to CONFIRMED or AWAITING_HOST_APPROVAL. */
 public record PaymentAuthorized(
-    UUID intentId, UUID bookingId, BigDecimal amount, String currency, Instant authorizedAt)
+    UUID intentId,
+    UUID bookingId,
+    UUID driverAccountId,
+    UUID hostAccountId,
+    BigDecimal amount,
+    String currency,
+    Instant authorizedAt)
     implements EventPayload {
 
   @Override
