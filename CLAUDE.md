@@ -55,7 +55,7 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 | `services/booking` (:8084) | Booking state machine, exclusion constraint, idempotent create, saga + timers (JdbcClient, no JPA) | done |
 | `services/payment` (:8085) | Intents (event-driven saga), FakeProcessor, double-entry ledger, commission rules, weekly payouts, admin refunds (JdbcClient) | done |
 | `services/search` (:8086) | Event-built geo search projection, PostGIS behind `ListingSearchIndex` (JdbcClient) | done |
-| `services/notification` | Email/in-app delivery, templates | planned (phase 8) |
+| `services/notification` (:8087) | Email/SMS/in-app delivery from events, templates, retries + dead letter, code redaction (JdbcClient) | done |
 | `services/review` | Reviews, eligibility projection, aggregates | planned (phase 9) |
 | `services/admin-bff` | Composed admin views, no entities | planned (phase 10) |
 | `infra/` | docker-compose for local infra | done |
@@ -69,7 +69,7 @@ New service: `/new-service <name>`. Verify: `/verify-service <name>`. Close a ph
 - Everything: `./mvnw verify`  ·  Fix formatting: `./mvnw spotless:apply`
 - Local infra: `cp .env.example .env` (fill values), then `docker compose --env-file .env -f infra/docker-compose.yml up -d` (add `--profile search` for OpenSearch)
 - Docker Desktop must be running for Testcontainers tests. `*Test` = unit (surefire), `*IT` = integration (failsafe, runs in `verify`)
-- Run a service locally: `java -jar services/<name>/target/<name>-service-0.1.0-SNAPSHOT.jar --spring.profiles.active=local` from the repo root (reads the root env file). Ports: gateway 8080, identity 8081, profile 8082, listing 8083, booking 8084, payment 8085, search 8086
+- Run a service locally: `java -jar services/<name>/target/<name>-service-0.1.0-SNAPSHOT.jar --spring.profiles.active=local` from the repo root (reads the root env file). Ports: gateway 8080, identity 8081, profile 8082, listing 8083, booking 8084, payment 8085, search 8086, notification 8087, review 8088, admin-bff 8089
 
 ## Work order per service
 Flyway migration → domain model + state machine + unit tests → repository + Testcontainers tests → application service → controller + validation + ProblemDetail → outbox events → ownership/403 tests → contract tests → Dockerfile.

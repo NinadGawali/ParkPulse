@@ -21,4 +21,5 @@ parksmart:
     issuer: ${IDENTITY_ISSUER:https://identity.parksmart.local}
     jwt:
       generate-ephemeral-key: true
-    dev-log-verification-codes: true
+    # Notification Service delivers codes now (its local log shows them, "DEV ONLY").
+    dev-log-verification-codes: false

@@ -2,7 +2,7 @@
 
 A parking marketplace (Airbnb-for-parking): hosts list private parking spaces; drivers search, book, pay, park, and review. Built as Spring Boot microservices in a Maven monorepo. (Repository name: ParkPulse.)
 
-**Status:** Phases 0–7 done (bootstrap, contracts, Gateway + Identity, Profile, Listing, Booking, Payment, Search). See [docs/PROGRESS.md](docs/PROGRESS.md).
+**Status:** Phases 0–8 done (bootstrap, contracts, Gateway + Identity, Profile, Listing, Booking, Payment, Search, Notification). See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Design docs
 - [Services & Entities](docs/ParkSmart-Services-and-Entities.md): authoritative service boundaries, entities, schema
@@ -51,7 +51,8 @@ java -jar services/<name>/target/<name>-service-0.1.0-SNAPSHOT.jar --spring.prof
 | Service | Port | What it does |
 |---|---|---|
 | gateway | 8080 | Single entry point: routing, edge JWT check, Redis rate limits, correlation IDs; blocks `/internal/**` |
-| identity | 8081 | Accounts, login, refresh-token rotation, email/phone verification, roles, JWKS. Locally, verification codes are logged ("DEV ONLY") until Notification exists |
+| identity | 8081 | Accounts, login, refresh-token rotation, email/phone verification, roles, JWKS |
+| notification | 8087 | Turns events into in-app notices and emails (and SMS for phone codes), honouring Profile's channel preferences; retries with backoff, dead-letters after 5 attempts, redacts one-time codes. Locally it "sends" by logging, and the log shows codes ("DEV ONLY") |
 | search | 8086 | Public geo search (radius, price, vehicle size, amenities, instant book, optional time window with weekly rules, blackouts and known bookings) over a projection built only from Listing, Booking, Payment and Review events |
 | payment | 8085 | Payment intents created from BookingRequested; driver authorizes with a processor token (FakeProcessor: `fake_ok`, `fake_decline`, `fake_capture_fail`); capture on confirmation, void on expiry/decline, policy refunds on cancellation; double-entry ledger with 15% commission; weekly host payouts and earnings |
 | booking | 8084 | Bookings: idempotent create (holds the slot; a Postgres exclusion constraint makes overlaps impossible), the payment saga (PaymentAuthorized → CONFIRMED or host approval), cancellations with policy refunds, check-in/out, and timers for payment expiry, host deadline, no-show and completion |

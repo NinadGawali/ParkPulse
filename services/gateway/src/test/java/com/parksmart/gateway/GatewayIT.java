@@ -56,7 +56,16 @@ class GatewayIT {
   static void properties(DynamicPropertyRegistry registry) {
     String upstream = "http://localhost:" + UPSTREAM.getAddress().getPort();
     for (String service :
-        List.of("IDENTITY", "PROFILE", "LISTING", "BOOKING", "PAYMENT", "SEARCH")) {
+        List.of(
+            "IDENTITY",
+            "PROFILE",
+            "LISTING",
+            "BOOKING",
+            "PAYMENT",
+            "SEARCH",
+            "NOTIFICATION",
+            "REVIEW",
+            "ADMIN_BFF")) {
       registry.add(service + "_URI", () -> upstream);
     }
     registry.add("IDENTITY_ISSUER", () -> ISSUER);

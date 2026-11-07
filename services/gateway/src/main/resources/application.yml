@@ -113,6 +113,22 @@ spring:
               predicates:
                 - Path=/api/v1/search/**
               filters: *standard-limit
+            - id: notification
+              uri: ${NOTIFICATION_URI}
+              predicates:
+                - Path=/api/v1/notifications,/api/v1/notifications/**
+              filters: *standard-limit
+            - id: review
+              uri: ${REVIEW_URI}
+              predicates:
+                - Path=/api/v1/reviews,/api/v1/reviews/**
+              filters: *standard-limit
+            # Last: every other admin path goes to the Admin BFF (listing/payment admin routes above win).
+            - id: admin-bff
+              uri: ${ADMIN_BFF_URI}
+              predicates:
+                - Path=/admin/v1/**
+              filters: *standard-limit
 
 server:
   port: ${GATEWAY_PORT:8080}

@@ -1,0 +1,97 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart Notification Service
+  version: 1.0.0
+  description: |
+    Delivers notices built from events: email (SES-compatible adapter; logging stand-in locally),
+    SMS (one-time codes) and the in-app feed. Owns `Notification` (delivery records) plus copies
+    of what it needs to deliver: contact details (from identity.private.v1, PII, never logged),
+    channel preferences (Profile's NotificationPreferencesChanged) and the admin list (RoleGranted).
+
+    - Every notice goes to the in-app feed; email too when the user allows email and an address is
+      known. One-time codes (VerificationCodeIssued) go to the destination Identity names, always,
+      and their bodies are redacted once sent, failed or a day old.
+    - Email/SMS are retried with exponential backoff (30 s, 1, 2, 4 min); after 5 attempts the
+      delivery is FAILED (dead letter). Each event produces its notices once.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - name: notifications
+paths:
+  /api/v1/notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      description: The caller's in-app feed, newest first.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/NotificationPage' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [notifications]
+      operationId: unreadNotificationCount
+      responses:
+        '200':
+          description: Unread in-app notices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unread]
+                properties: { unread: { type: integer, minimum: 0 } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+  /api/v1/notifications/{notificationId}/read:
+    post:
+      tags: [notifications]
+      operationId: markNotificationRead
+      description: Owner only (403 otherwise). Idempotent.
+      parameters:
+        - { name: notificationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Marked read. }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+  /api/v1/notifications/read-all:
+    post:
+      tags: [notifications]
+      operationId: markAllNotificationsRead
+      responses:
+        '200':
+          description: How many were marked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [marked]
+                properties: { marked: { type: integer, minimum: 0 } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    bearerAuth: { $ref: 'common.yaml#/components/securitySchemes/bearerAuth' }
+  schemas:
+    Notification:
+      type: object
+      required: [id, type, title, body, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, examples: [booking.confirmed.driver] }
+        title: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: [string, 'null'], format: date-time }
+    NotificationPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Notification' } }
+        nextCursor: { type: [string, 'null'] }

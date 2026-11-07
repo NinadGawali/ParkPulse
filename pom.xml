@@ -30,6 +30,7 @@
     <module>services/booking</module>
     <module>services/payment</module>
     <module>services/search</module>
+    <module>services/notification</module>
     <!-- services/<name> modules are added by /new-service -->
   </modules>
 
