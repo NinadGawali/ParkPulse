@@ -266,7 +266,7 @@ class ListingTest {
     Listing l = withRules(new AvailabilityRule(DayOfWeek.MONDAY, 0, 1440));
     l.addBlackout(
         new Blackout(UUID.randomUUID(), ist("2030-01-07T12:00"), ist("2030-01-07T13:00"), null),
-        T0);
+        ist("2030-01-01T00:00"));
     assertThat(l.bookability(ist("2030-01-07T11:00"), ist("2030-01-07T12:00"))).isEmpty();
     assertThat(l.bookability(ist("2030-01-07T11:00"), ist("2030-01-07T12:15")))
         .contains(UnbookableReason.BLACKED_OUT);
@@ -308,5 +308,60 @@ class ListingTest {
     assertThatThrownBy(() -> new Blackout(UUID.randomUUID(), T0, T0, null))
         .extracting("code")
         .isEqualTo("invalid-blackout");
+  }
+
+  @Test
+  void dst_fall_back_windows_must_cover_the_repeated_hour() {
+    ListingTerms ny =
+        new ListingTerms(
+            null, null, null, null, "America/New_York", null, null, null, null, null, null, null);
+    Listing l = live();
+    l.update(ny, BOUNDS, T0);
+    // 2030-11-03 is a Sunday; clocks go back 02:00 EDT -> 01:00 EST.
+    Instant firstPass = Instant.parse("2030-11-03T05:45:00Z"); // 01:45 EDT
+    Instant secondPass = Instant.parse("2030-11-03T06:15:00Z"); // 01:15 EST
+    l.replaceRules(List.of(new AvailabilityRule(DayOfWeek.SUNDAY, 3 * 60, 1440)), T0);
+    assertThat(l.bookability(firstPass, secondPass))
+        .contains(UnbookableReason.OUTSIDE_AVAILABILITY);
+    l.replaceRules(List.of(new AvailabilityRule(DayOfWeek.SUNDAY, 0, 1440)), T0);
+    assertThat(l.bookability(firstPass, secondPass)).isEmpty();
+  }
+
+  @Test
+  void photos_are_frozen_during_review_and_old_blackouts_are_pruned() {
+    Listing l = publishable();
+    l.submit(true, ELIGIBLE, T0);
+    assertThatThrownBy(() ->
+            l.startPhotoUpload(
+                UUID.randomUUID(), PhotoContentType.PNG, 10, 100, T0, Duration.ofMinutes(10)))
+        .extracting("code")
+        .isEqualTo("listing-not-editable");
+    UUID photo = l.readyPhotos().get(0).id();
+    assertThatThrownBy(() -> l.reorderPhotos(List.of(photo), T0))
+        .extracting("code")
+        .isEqualTo("listing-not-editable");
+
+    Listing d = draft();
+    d.addBlackout(new Blackout(UUID.randomUUID(), T0, T0.plusSeconds(3600), null), T0);
+    Instant later = T0.plus(Duration.ofDays(40));
+    d.addBlackout(new Blackout(UUID.randomUUID(), later, later.plusSeconds(3600), null), later);
+    assertThat(d.blackouts()).hasSize(1);
+    Instant tooFar = T0.plus(Duration.ofDays(800));
+    assertThatThrownBy(() ->
+            d.addBlackout(
+                new Blackout(UUID.randomUUID(), tooFar, tooFar.plusSeconds(60), null), T0))
+        .extracting("code")
+        .isEqualTo("invalid-blackout");
+  }
+
+  @Test
+  void invisible_characters_are_rejected() {
+    Listing l = draft();
+    assertThatThrownBy(() -> l.update(patch("Nice spot \u202Egnp.exe", null), BOUNDS, T0))
+        .extracting("code")
+        .isEqualTo("invalid-title");
+    assertThatThrownBy(() -> l.update(patch("Zero\u200Bwidth title", null), BOUNDS, T0))
+        .extracting("code")
+        .isEqualTo("invalid-title");
   }
 }

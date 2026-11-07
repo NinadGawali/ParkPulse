@@ -31,7 +31,8 @@ import java.util.UUID;
  *
  * <p>Lifecycle: DRAFT -> PENDING_REVIEW -> PUBLISHED <-> PAUSED; PENDING_REVIEW -> REJECTED ->
  * PENDING_REVIEW; anything but ARCHIVED -> ARCHIVED. Editing the address or location of a
- * PUBLISHED/PAUSED listing sends it back to PENDING_REVIEW.
+ * PUBLISHED/PAUSED listing sends it back to PENDING_REVIEW (approval then publishes it, also if it
+ * was paused before).
  */
 public final class Listing {
 
@@ -40,6 +41,13 @@ public final class Listing {
   public static final int MAX_BLACKOUTS = 100;
   public static final int MAX_AMENITIES = 8;
   public static final Duration MAX_QUOTE_WINDOW = Duration.ofDays(31);
+
+  /** Blackouts may start at most this far ahead. */
+  public static final Duration MAX_BLACKOUT_LEAD = Duration.ofDays(2 * 366);
+
+  /** Ended blackouts are dropped this long after they end. */
+  public static final Duration BLACKOUT_RETENTION = Duration.ofDays(30);
+
   public static final String CURRENCY = "INR";
 
   /** What an update changed, which decides the events it produces. */
@@ -331,6 +339,11 @@ public final class Listing {
     return clean;
   }
 
+  /** An optional moderation note, cleaned like any other text. */
+  public static String cleanNote(String note) {
+    return Text.clean(note, "reason", 1, 500, false, true);
+  }
+
   public void pause(Instant now) {
     requireStatus("pause", ListingStatus.PUBLISHED);
     status = ListingStatus.PAUSED;
@@ -374,7 +387,7 @@ public final class Listing {
       long maxBytes,
       Instant now,
       Duration ttl) {
-    ensureNotArchived();
+    ensurePhotosEditable();
     if (contentLength < 1 || contentLength > maxBytes) {
       throw new DomainException("invalid-contentLength", "contentLength must be 1-" + maxBytes);
     }
@@ -406,7 +419,7 @@ public final class Listing {
 
   /** Checks that a pending photo can be confirmed now (the caller then copies and verifies it). */
   public ListingPhoto pendingPhoto(UUID photoId, Instant now) {
-    ensureNotArchived();
+    ensurePhotosEditable();
     ListingPhoto photo = photo(photoId);
     if (photo.isReady()) {
       throw new DomainException("photo-already-confirmed", "Photo was already confirmed");
@@ -428,7 +441,7 @@ public final class Listing {
 
   /** Removes a photo. The last READY photo of a live or in-review listing cannot be removed. */
   public ListingPhoto removePhoto(UUID photoId, Instant now) {
-    ensureNotArchived();
+    ensurePhotosEditable();
     ListingPhoto photo = photo(photoId);
     boolean needsPhoto =
         status == ListingStatus.PUBLISHED || status == ListingStatus.PENDING_REVIEW;
@@ -442,7 +455,7 @@ public final class Listing {
 
   /** {@code order} must list every READY photo exactly once. */
   public void reorderPhotos(List<UUID> order, Instant now) {
-    ensureNotArchived();
+    ensurePhotosEditable();
     List<ListingPhoto> ready = readyPhotos();
     Set<UUID> readyIds = new HashSet<>();
     ready.forEach(p -> readyIds.add(p.id()));
@@ -508,6 +521,10 @@ public final class Listing {
     if (Duration.between(blackout.start(), blackout.end()).compareTo(Duration.ofDays(366)) > 0) {
       throw new DomainException("invalid-blackout", "A blackout can span at most 366 days");
     }
+    if (blackout.start().isAfter(now.plus(MAX_BLACKOUT_LEAD))) {
+      throw new DomainException("invalid-blackout", "A blackout can start at most 2 years ahead");
+    }
+    blackouts.removeIf(b -> b.end().isBefore(now.minus(BLACKOUT_RETENTION)));
     long current = blackouts.stream().filter(b -> b.end().isAfter(now)).count();
     if (current >= MAX_BLACKOUTS) {
       throw new DomainException("blackout-limit", "At most " + MAX_BLACKOUTS + " blackouts");
@@ -548,6 +565,13 @@ public final class Listing {
   private boolean covered(Instant start, Instant end) {
     LocalDateTime from = LocalDateTime.ofInstant(start, timeZone);
     LocalDateTime to = LocalDateTime.ofInstant(end, timeZone);
+    if (!to.isAfter(from)) {
+      // DST fall-back: the window ends in the repeated hour at a wall-clock time at or before
+      // its start. Require the whole wall-clock span the window touches.
+      LocalDateTime swap = from;
+      from = to;
+      to = swap.plusMinutes(1);
+    }
     for (LocalDate day = from.toLocalDate();
         !day.isAfter(to.toLocalDate());
         day = day.plusDays(1)) {
@@ -612,6 +636,15 @@ public final class Listing {
     }
     throw new DomainException(
         "illegal-transition", "Cannot " + action + " a listing that is " + status);
+  }
+
+  /** What the moderator reviews must not change under them. */
+  private void ensurePhotosEditable() {
+    ensureNotArchived();
+    if (status == ListingStatus.PENDING_REVIEW) {
+      throw new DomainException(
+          "listing-not-editable", "Photos cannot change while the listing is being reviewed");
+    }
   }
 
   private void ensureNotArchived() {

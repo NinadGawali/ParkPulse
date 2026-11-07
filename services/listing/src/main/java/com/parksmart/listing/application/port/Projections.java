@@ -15,6 +15,12 @@ public final class Projections {
     /** {@link HostEligibility#UNKNOWN} when no event has been seen for the host. */
     HostEligibility find(UUID hostAccountId);
 
+    /**
+     * Like {@link #find} but holds a shared lock on the host's row until the transaction ends, so a
+     * concurrent suspension waits for (and then sees) the listing this call publishes.
+     */
+    HostEligibility findForPublish(UUID hostAccountId, Instant now);
+
     void phoneVerified(UUID hostAccountId, boolean verified, Instant at);
 
     void profilePhoto(UUID hostAccountId, boolean hasPhoto, Instant at);

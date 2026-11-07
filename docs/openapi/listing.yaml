@@ -159,13 +159,14 @@ paths:
     post:
       tags: [listings]
       operationId: resumeListing
-      description: Owner only. PAUSED -> PUBLISHED.
+      description: Owner only. PAUSED -> PUBLISHED. 422 `host-suspended` while the host is suspended.
       responses:
         '200': { description: Resumed., content: { application/json: { schema: { $ref: '#/components/schemas/ListingResponse' } } } }
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
   /api/v1/listings/{listingId}/photos/upload-urls:
     parameters: [{ $ref: '#/components/parameters/ListingId' }]
     post:
@@ -188,6 +189,7 @@ paths:
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
         '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
   /api/v1/listings/{listingId}/photos/{photoId}/confirm:
     parameters:
       - $ref: '#/components/parameters/ListingId'
@@ -205,6 +207,7 @@ paths:
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
         '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
   /api/v1/listings/{listingId}/photos/{photoId}:
     parameters:
       - $ref: '#/components/parameters/ListingId'
@@ -224,7 +227,9 @@ paths:
     put:
       tags: [photos]
       operationId: reorderPhotos
-      description: Owner only (non-owner 403). photoIds must list every READY photo exactly once.
+      description: |
+        Owner only (non-owner 403). photoIds must list every READY photo exactly once. Photos cannot
+        be added, confirmed, removed or reordered while PENDING_REVIEW (409 `listing-not-editable`).
       requestBody:
         required: true
         content:
@@ -246,6 +251,7 @@ paths:
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
   /api/v1/listings/{listingId}/availability:
     parameters: [{ $ref: '#/components/parameters/ListingId' }]
     put:
@@ -262,12 +268,16 @@ paths:
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
   /api/v1/listings/{listingId}/blackouts:
     parameters: [{ $ref: '#/components/parameters/ListingId' }]
     post:
       tags: [availability]
       operationId: addBlackout
-      description: Owner only. Does not cancel existing bookings in the range (host must cancel those explicitly).
+      description: |
+        Owner only. Does not cancel existing bookings in the range (host must cancel those
+        explicitly). Must end in the future and start at most 2 years ahead; at most 100 current
+        blackouts (422 `blackout-limit`). Blackouts that ended more than 30 days ago are dropped.
       requestBody:
         required: true
         content:
@@ -278,6 +288,8 @@ paths:
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
   /api/v1/listings/{listingId}/blackouts/{blackoutId}:
     parameters:
       - $ref: '#/components/parameters/ListingId'
@@ -294,6 +306,7 @@ paths:
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
   /admin/v1/listings:
     get:
       tags: [admin]
@@ -315,7 +328,9 @@ paths:
     post:
       tags: [admin]
       operationId: approveListing
-      description: ADMIN only. PENDING_REVIEW -> PUBLISHED; writes a moderation log entry; emits ListingPublished.
+      description: |
+        ADMIN only, and never for the admin's own listing (403). PENDING_REVIEW -> PUBLISHED;
+        writes a moderation log entry; emits ListingPublished. 422 `host-suspended`.
       requestBody:
         required: false
         content:
@@ -326,6 +341,7 @@ paths:
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
   /admin/v1/listings/{listingId}/reject:
     parameters: [{ $ref: '#/components/parameters/ListingId' }]
     post:
@@ -356,8 +372,10 @@ paths:
         Called by Booking Service while creating a booking. Not routed by the gateway.
         Requires a JWT with DRIVER (Booking forwards the driver's token); otherwise 403.
         Booking itself rejects a driver booking their own listing (hostAccountId == caller).
-        Archived listings are 404; other non-PUBLISHED listings return `bookable: false`,
-        `unbookableReason: NOT_PUBLISHED`. Windows longer than 31 days are 400.
+        Only PUBLISHED and PAUSED listings exist here (PAUSED returns `bookable: false`,
+        `unbookableReason: NOT_PUBLISHED`); drafts, listings in review, rejected and archived ones
+        are 404, so a forwarded token cannot read unpublished terms. Windows longer than 31 days
+        are 400.
         Returns the terms Booking snapshots and whether the window fits the listing's availability
         rules and blackouts. Booking still enforces overlap with other bookings in its own DB.
       parameters:

@@ -12,6 +12,7 @@ import com.parksmart.listing.domain.AvailabilityRule;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,15 +55,15 @@ class PhotoAndAvailabilityController {
   }
 
   @PutMapping("/photos/order")
-  ListingResponse reorder(
+  ResponseEntity<ListingResponse> reorder(
       @PathVariable UUID listingId, @Valid @RequestBody Requests.PhotoOrder body) {
-    return ListingResponse.forOwner(photos.reorder(callerId(), listingId, body.photoIds()));
+    return ListingController.owner(photos.reorder(callerId(), listingId, body.photoIds()));
   }
 
   @PutMapping("/availability")
-  ListingResponse replaceRules(
+  ResponseEntity<ListingResponse> replaceRules(
       @PathVariable UUID listingId, @Valid @RequestBody Requests.Rules body) {
-    return ListingResponse.forOwner(
+    return ListingController.owner(
         availability.replaceRules(
             callerId(),
             listingId,

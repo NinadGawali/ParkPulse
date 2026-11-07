@@ -193,8 +193,8 @@ class PhotosAndAvailabilityIT extends ListingFixtures {
         .andExpect(status().isOk());
     User driver = driver();
     String base = "/internal/v1/listings/" + id + "/booking-quote";
-    // Monday 2030-01-07 10:00-14:00 IST = 04:30-08:30 UTC.
-    get(base + "?start=2030-01-07T04:30:00Z&end=2030-01-07T08:30:00Z", driver)
+    // Monday 2027-01-04 10:00-14:00 IST = 04:30-08:30 UTC.
+    get(base + "?start=2027-01-04T04:30:00Z&end=2027-01-04T08:30:00Z", driver)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.bookable").value(true))
         .andExpect(jsonPath("$.unbookableReason").isEmpty())
@@ -203,29 +203,29 @@ class PhotosAndAvailabilityIT extends ListingFixtures {
         .andExpect(jsonPath("$.bufferMinutes").value(15))
         .andExpect(jsonPath("$.timeZone").value("Asia/Kolkata"));
     // 07:00 IST is before the rule opens.
-    get(base + "?start=2030-01-07T01:30:00Z&end=2030-01-07T04:30:00Z", driver)
+    get(base + "?start=2027-01-04T01:30:00Z&end=2027-01-04T04:30:00Z", driver)
         .andExpect(jsonPath("$.unbookableReason").value("OUTSIDE_AVAILABILITY"));
     // A Tuesday has no rule.
-    get(base + "?start=2030-01-08T04:30:00Z&end=2030-01-08T05:30:00Z", driver)
+    get(base + "?start=2027-01-05T04:30:00Z&end=2027-01-05T05:30:00Z", driver)
         .andExpect(jsonPath("$.bookable").value(false));
 
     postJson(
             "/api/v1/listings/" + id + "/blackouts",
-            Map.of("start", "2030-01-07T06:00:00Z", "end", "2030-01-07T07:00:00Z"),
+            Map.of("start", "2027-01-04T06:00:00Z", "end", "2027-01-04T07:00:00Z"),
             host)
         .andExpect(status().isCreated());
-    get(base + "?start=2030-01-07T04:30:00Z&end=2030-01-07T08:30:00Z", driver)
+    get(base + "?start=2027-01-04T04:30:00Z&end=2027-01-04T08:30:00Z", driver)
         .andExpect(jsonPath("$.unbookableReason").value("BLACKED_OUT"));
 
     post("/api/v1/listings/" + id + "/pause", host).andExpect(status().isOk());
-    get(base + "?start=2030-01-07T04:30:00Z&end=2030-01-07T08:30:00Z", driver)
+    get(base + "?start=2027-01-04T04:30:00Z&end=2027-01-04T08:30:00Z", driver)
         .andExpect(jsonPath("$.unbookableReason").value("NOT_PUBLISHED"));
 
-    get(base + "?start=2030-01-07T08:30:00Z&end=2030-01-07T04:30:00Z", driver)
+    get(base + "?start=2027-01-04T08:30:00Z&end=2027-01-04T04:30:00Z", driver)
         .andExpect(status().isBadRequest());
-    get(base + "?start=2030-01-07T04:30:00Z&end=2030-01-07T08:30:00Z", user("ADMIN"))
+    get(base + "?start=2027-01-04T04:30:00Z&end=2027-01-04T08:30:00Z", user("ADMIN"))
         .andExpect(status().isForbidden());
-    get(base + "?start=2030-01-07T04:30:00Z&end=2030-01-07T08:30:00Z", null)
+    get(base + "?start=2027-01-04T04:30:00Z&end=2027-01-04T08:30:00Z", null)
         .andExpect(status().isUnauthorized());
   }
 
@@ -235,8 +235,55 @@ class PhotosAndAvailabilityIT extends ListingFixtures {
     get(
             "/internal/v1/listings/"
                 + id
-                + "/booking-quote?start=2030-01-07T10:00:00Z&end=2030-01-10T10:00:00Z",
+                + "/booking-quote?start=2027-01-04T10:00:00Z&end=2027-01-07T10:00:00Z",
             driver())
         .andExpect(jsonPath("$.bookable").value(true));
+  }
+
+  @Test
+  void reorder_and_rules_return_the_new_etag_and_photos_freeze_in_review() throws Exception {
+    User host = host();
+    eligible(host);
+    UUID id = create(host);
+    UUID photo = addPhoto(id, host);
+    String before = etag(id, host);
+    String afterRules =
+        putJson("/api/v1/listings/" + id + "/availability", allWeek(), host)
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getHeader("ETag");
+    assertThat(afterRules).isNotNull().isNotEqualTo(before).isEqualTo(etag(id, host));
+    String afterOrder =
+        putJson(
+                "/api/v1/listings/" + id + "/photos/order",
+                Map.of("photoIds", List.of(photo)),
+                host)
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getHeader("ETag");
+    assertThat(afterOrder).isEqualTo(etag(id, host));
+
+    post("/api/v1/listings/" + id + "/submit", host).andExpect(status().isOk());
+    postJson(
+            "/api/v1/listings/" + id + "/photos/upload-urls",
+            Map.of("contentType", "image/png", "contentLength", 100),
+            host)
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.type").value("https://parksmart.dev/problems/listing-not-editable"));
+    delete("/api/v1/listings/" + id + "/photos/" + photo, host).andExpect(status().isConflict());
+  }
+
+  @Test
+  void the_quote_hides_listings_that_are_not_live() throws Exception {
+    User host = host();
+    UUID draft = create(host);
+    get(
+            "/internal/v1/listings/"
+                + draft
+                + "/booking-quote?start=2027-01-04T10:00:00Z&end=2027-01-04T12:00:00Z",
+            driver())
+        .andExpect(status().isNotFound());
   }
 }

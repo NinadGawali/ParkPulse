@@ -92,7 +92,12 @@ public class PhotoService {
     if (storage.stat(pending.stagingKey()).isEmpty()) {
       throw new DomainException("upload-missing", "No file was uploaded for this photo");
     }
-    // Copy first, then verify the copy: the presigned URL can only ever write the staging key.
+    // Reject obvious mismatches before anything is public, then copy and verify the copy: the
+    // presigned URL can only ever write the staging key.
+    if (!matchesDeclared(pending, pending.stagingKey())) {
+      throw new DomainException(
+          "upload-mismatch", "Uploaded file does not match the declared image type and size");
+    }
     String publicKey = listing.publicPhotoKey(photoId);
     storage.copy(pending.stagingKey(), publicKey);
     if (!matchesDeclared(pending, publicKey)) {
@@ -121,12 +126,12 @@ public class PhotoService {
   }
 
   @Transactional
-  public Listing reorder(UUID callerId, UUID listingId, List<UUID> order) {
+  public ListingService.Versioned reorder(UUID callerId, UUID listingId, List<UUID> order) {
     Listing listing = listingService.owned(callerId, listingId);
     listing.reorderPhotos(order, clock.instant());
-    listings.save(listing);
+    long version = listings.save(listing);
     events.updatedIfLive(listing);
-    return listing;
+    return new ListingService.Versioned(listing, version);
   }
 
   /**

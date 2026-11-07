@@ -35,12 +35,13 @@ public class AvailabilityService {
   }
 
   @Transactional
-  public Listing replaceRules(UUID callerId, UUID listingId, List<AvailabilityRule> rules) {
+  public ListingService.Versioned replaceRules(
+      UUID callerId, UUID listingId, List<AvailabilityRule> rules) {
     Listing listing = listingService.owned(callerId, listingId);
     listing.replaceRules(rules, clock.instant());
-    listings.save(listing);
+    long version = listings.save(listing);
     events.availabilityChangedIfLive(listing);
-    return listing;
+    return new ListingService.Versioned(listing, version);
   }
 
   @Transactional
@@ -69,13 +70,17 @@ public class AvailabilityService {
     }
   }
 
-  /** Any listing state may be quoted (Booking needs the reason), except archived ones (404). */
+  /**
+   * PUBLISHED listings are quoted; PAUSED ones come back unbookable (NOT_PUBLISHED). Listings that
+   * were never public, are in review, or are archived are 404, so a forwarded driver token cannot
+   * read unpublished terms.
+   */
   @Transactional(readOnly = true)
   public Quote quote(UUID listingId, Instant start, Instant end) {
     Listing listing =
         listings
             .findById(listingId)
-            .filter(l -> l.deletedAt() == null)
+            .filter(Listing::isLive)
             .orElseThrow(() -> ApiException.notFound("Listing"));
     return new Quote(listing, listing.bookability(start, end));
   }

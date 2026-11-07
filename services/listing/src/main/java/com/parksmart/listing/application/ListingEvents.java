@@ -97,6 +97,9 @@ public class ListingEvents {
   }
 
   private static List<BlackoutData> blackouts(Listing l) {
-    return l.blackouts().stream().map(b -> new BlackoutData(b.id(), b.start(), b.end())).toList();
+    return l.blackouts().stream()
+        .filter(b -> b.end().isAfter(l.updatedAt()))
+        .map(b -> new BlackoutData(b.id(), b.start(), b.end()))
+        .toList();
   }
 }

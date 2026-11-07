@@ -132,7 +132,8 @@ public class ListingService {
   @Transactional
   public Versioned resume(UUID callerId, UUID listingId) {
     Listing listing = owned(callerId, listingId);
-    listing.resume(eligibility.find(listing.hostAccountId()), clock.instant());
+    listing.resume(
+        eligibility.findForPublish(listing.hostAccountId(), clock.instant()), clock.instant());
     long version = listings.save(listing);
     events.published(listing);
     return new Versioned(listing, version);
@@ -188,18 +189,19 @@ public class ListingService {
 
   @Transactional
   public Versioned approve(UUID adminId, UUID listingId, String note) {
-    Listing listing = listings.findById(listingId).orElseThrow(ListingService::notFound);
+    Listing listing = moderatable(adminId, listingId);
     Instant now = clock.instant();
-    listing.approve(eligibility.find(listing.hostAccountId()), now);
+    listing.approve(eligibility.findForPublish(listing.hostAccountId(), now), now);
     long version = listings.save(listing);
-    moderation.record(listingId, adminId, ModerationDecision.APPROVED.name(), note, now);
+    moderation.record(
+        listingId, adminId, ModerationDecision.APPROVED.name(), Listing.cleanNote(note), now);
     events.published(listing);
     return new Versioned(listing, version);
   }
 
   @Transactional
   public Versioned reject(UUID adminId, UUID listingId, String reason) {
-    Listing listing = listings.findById(listingId).orElseThrow(ListingService::notFound);
+    Listing listing = moderatable(adminId, listingId);
     Instant now = clock.instant();
     String clean = listing.reject(reason, now);
     long version = listings.save(listing);
@@ -215,6 +217,15 @@ public class ListingService {
     Listing listing = listings.findById(listingId).orElseThrow(ListingService::notFound);
     if (!listing.isOwnedBy(callerId)) {
       throw ApiException.forbidden("Not your listing");
+    }
+    return listing;
+  }
+
+  /** Admins cannot moderate their own listings. */
+  private Listing moderatable(UUID adminId, UUID listingId) {
+    Listing listing = listings.findById(listingId).orElseThrow(ListingService::notFound);
+    if (listing.isOwnedBy(adminId)) {
+      throw ApiException.forbidden("Admins cannot moderate their own listings");
     }
     return listing;
   }

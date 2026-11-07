@@ -47,6 +47,31 @@ class JdbcProjections
   }
 
   @Override
+  public HostEligibility findForPublish(UUID hostAccountId, Instant now) {
+    // Make sure a row exists to lock; a missing row means "no events yet" (all false).
+    jdbc.sql(
+            """
+            INSERT INTO host_eligibility (host_account_id, updated_at) VALUES (:id, :now)
+            ON CONFLICT (host_account_id) DO NOTHING
+            """)
+        .param("id", hostAccountId)
+        .param("now", ts(now))
+        .update();
+    return jdbc.sql(
+            """
+            SELECT phone_verified, has_profile_photo, suspended FROM host_eligibility
+            WHERE host_account_id = :id FOR SHARE
+            """)
+        .param("id", hostAccountId)
+        .query((rs, n) ->
+            new HostEligibility(
+                rs.getBoolean("phone_verified"),
+                rs.getBoolean("has_profile_photo"),
+                rs.getBoolean("suspended")))
+        .single();
+  }
+
+  @Override
   public void phoneVerified(UUID hostAccountId, boolean verified, Instant at) {
     jdbc.sql(
             """
@@ -132,6 +157,16 @@ class JdbcProjections
             """)
         .param("booking", bookingId)
         .param("at", ts(at))
+        .update();
+  }
+
+  /** Ended rows only need to outlive any late duplicate event (Kafka retention is shorter). */
+  @org.springframework.scheduling.annotation.Scheduled(
+      fixedDelayString = "PT6H",
+      initialDelayString = "PT10M")
+  @org.springframework.transaction.annotation.Transactional
+  public void purgeEndedBookings() {
+    jdbc.sql("DELETE FROM listing_active_bookings WHERE ended_at < now() - interval '30 days'")
         .update();
   }
 

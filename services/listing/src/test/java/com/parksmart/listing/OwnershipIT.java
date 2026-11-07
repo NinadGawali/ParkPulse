@@ -95,4 +95,19 @@ class OwnershipIT extends ListingFixtures {
         .update();
     delete("/api/v1/listings/" + id, host).andExpect(status().isNoContent());
   }
+
+  @Test
+  void an_admin_cannot_moderate_their_own_listing() throws Exception {
+    User hostAdmin = user("DRIVER", "HOST", "ADMIN");
+    eligible(hostAdmin);
+    UUID id = create(hostAdmin);
+    addPhoto(id, hostAdmin);
+    putJson("/api/v1/listings/" + id + "/availability", allWeek(), hostAdmin)
+        .andExpect(status().isOk());
+    post("/api/v1/listings/" + id + "/submit", hostAdmin).andExpect(status().isOk());
+    post("/admin/v1/listings/" + id + "/approve", hostAdmin).andExpect(status().isForbidden());
+    postJson("/admin/v1/listings/" + id + "/reject", Map.of("reason", "x"), hostAdmin)
+        .andExpect(status().isForbidden());
+    post("/admin/v1/listings/" + id + "/approve", user("ADMIN")).andExpect(status().isOk());
+  }
 }
