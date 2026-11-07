@@ -1,0 +1,33 @@
+# Build output
+target/
+build/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Secrets and local env (only .env.example is committed)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/src/test/resources/**/*.pem
+
+# Claude Code personal overrides and worktrees
+.claude/settings.local.json
+.claude/worktrees/
+
+# Logs
+*.log
+logs/
