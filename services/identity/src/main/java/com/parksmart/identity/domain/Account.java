@@ -86,20 +86,6 @@ public final class Account {
     return lockedUntil != null && now.isBefore(lockedUntil);
   }
 
-  /** Records a failed password attempt; locks the account after {@link #MAX_FAILED_LOGINS}. */
-  public void recordFailedLogin(Instant now) {
-    failedLoginAttempts++;
-    if (failedLoginAttempts >= MAX_FAILED_LOGINS) {
-      lockedUntil = now.plus(LOCKOUT);
-      failedLoginAttempts = 0;
-    }
-  }
-
-  public void recordSuccessfulLogin() {
-    failedLoginAttempts = 0;
-    lockedUntil = null;
-  }
-
   /**
    * @return true if this changed the account (first verification)
    */
@@ -147,10 +133,9 @@ public final class Account {
     phoneVerifiedAt = now;
   }
 
+  /** Login counters are reset by the repository (they are updated atomically in SQL). */
   public void changePassword(String newPasswordHash) {
     passwordHash = Objects.requireNonNull(newPasswordHash);
-    failedLoginAttempts = 0;
-    lockedUntil = null;
   }
 
   public UUID id() {

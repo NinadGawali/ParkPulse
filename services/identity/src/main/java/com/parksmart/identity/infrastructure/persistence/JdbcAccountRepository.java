@@ -8,6 +8,7 @@ import com.parksmart.identity.domain.Account;
 import com.parksmart.identity.domain.AccountStatus;
 import com.parksmart.identity.domain.DomainException;
 import com.parksmart.identity.domain.RoleType;
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
@@ -93,7 +94,6 @@ class JdbcAccountRepository implements AccountRepository {
                   UPDATE accounts
                   SET password_hash = :passwordHash, status = :status, phone = :phone,
                       email_verified_at = :emailVerifiedAt, phone_verified_at = :phoneVerifiedAt,
-                      failed_login_attempts = :failed, locked_until = :lockedUntil,
                       updated_at = now(), version = version + 1
                   WHERE id = :id AND version = :version
                   """)
@@ -102,8 +102,6 @@ class JdbcAccountRepository implements AccountRepository {
               .param("phone", account.phone())
               .param("emailVerifiedAt", ts(account.emailVerifiedAt()))
               .param("phoneVerifiedAt", ts(account.phoneVerifiedAt()))
-              .param("failed", account.failedLoginAttempts())
-              .param("lockedUntil", ts(account.lockedUntil()))
               .param("id", account.id())
               .param("version", account.version())
               .update();
@@ -115,6 +113,30 @@ class JdbcAccountRepository implements AccountRepository {
           "concurrent-modification", "The account was changed by another request; retry");
     }
     insertMissingRoles(account);
+  }
+
+  @Override
+  public void recordFailedLogin(UUID accountId, Instant now) {
+    jdbc.sql(
+            """
+            UPDATE accounts SET
+              locked_until = CASE WHEN failed_login_attempts + 1 >= :max
+                                  THEN :lockUntil ELSE locked_until END,
+              failed_login_attempts = CASE WHEN failed_login_attempts + 1 >= :max
+                                           THEN 0 ELSE failed_login_attempts + 1 END
+            WHERE id = :id
+            """)
+        .param("max", Account.MAX_FAILED_LOGINS)
+        .param("lockUntil", ts(now.plus(Account.LOCKOUT)))
+        .param("id", accountId)
+        .update();
+  }
+
+  @Override
+  public void resetLoginFailures(UUID accountId) {
+    jdbc.sql("UPDATE accounts SET failed_login_attempts = 0, locked_until = NULL WHERE id = :id")
+        .param("id", accountId)
+        .update();
   }
 
   private void insertMissingRoles(Account account) {

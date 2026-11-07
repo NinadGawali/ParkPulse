@@ -21,4 +21,9 @@ public interface VerificationTokenRepository {
 
   /** Consumes every unconsumed token of this purpose for the account (on re-issue). */
   void invalidateActive(UUID accountId, VerificationPurpose purpose, Instant now);
+
+  /** How many tokens of this purpose were issued since {@code since}, and when the last one was. */
+  IssueStats issueStats(UUID accountId, VerificationPurpose purpose, Instant since);
+
+  record IssueStats(int issuedSince, Instant lastIssuedAt) {}
 }

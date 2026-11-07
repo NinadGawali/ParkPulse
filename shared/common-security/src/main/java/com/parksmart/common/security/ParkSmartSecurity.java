@@ -41,6 +41,6 @@ public final class ParkSmartSecurity {
 
   /** Paths every service leaves open (health probes). Put these first in the rules. */
   public static String[] publicInfrastructurePaths() {
-    return new String[] {"/actuator/health", "/actuator/health/**", "/actuator/info"};
+    return new String[] {"/actuator/health", "/actuator/health/**"};
   }
 }

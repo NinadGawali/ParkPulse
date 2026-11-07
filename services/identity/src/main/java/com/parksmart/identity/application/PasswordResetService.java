@@ -50,7 +50,7 @@ public class PasswordResetService {
         .findByEmail(email)
         .filter(Account::canLogIn)
         .ifPresent(account ->
-            verificationCodes.issue(
+            verificationCodes.issueIfAllowed(
                 account.id(), VerificationPurpose.PASSWORD_RESET, account.email()));
   }
 
@@ -74,6 +74,7 @@ public class PasswordResetService {
     accounts.update(account);
     tokens.update(token);
     refreshTokens.revokeAllForAccount(account.id());
+    accounts.resetLoginFailures(account.id());
   }
 
   private static DomainException invalidToken() {

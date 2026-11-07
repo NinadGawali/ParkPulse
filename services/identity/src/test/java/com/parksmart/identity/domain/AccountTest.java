@@ -47,15 +47,25 @@ class AccountTest {
   }
 
   @Test
-  void five_failed_logins_lock_the_account_for_fifteen_minutes() {
-    Account account = newAccount();
-    for (int i = 0; i < Account.MAX_FAILED_LOGINS - 1; i++) {
-      account.recordFailedLogin(NOW);
-    }
-    assertThat(account.isLocked(NOW)).isFalse();
-    account.recordFailedLogin(NOW);
+  void lock_applies_until_locked_until() {
+    Instant lockedUntil = NOW.plus(Account.LOCKOUT);
+    Account account =
+        new Account(
+            UUID.randomUUID(),
+            "a@b.c",
+            "h",
+            AccountStatus.ACTIVE,
+            null,
+            NOW,
+            null,
+            "1",
+            0,
+            lockedUntil,
+            java.util.Set.of(RoleType.DRIVER),
+            NOW,
+            0);
     assertThat(account.isLocked(NOW)).isTrue();
-    assertThat(account.isLocked(NOW.plus(Account.LOCKOUT))).isFalse();
+    assertThat(account.isLocked(lockedUntil)).isFalse();
   }
 
   @Test

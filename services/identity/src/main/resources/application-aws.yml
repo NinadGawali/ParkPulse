@@ -1,10 +1,18 @@
 # AWS (ECS/EKS). All values are injected as environment variables from Secrets Manager / SSM:
-# IDENTITY_DB_URL, IDENTITY_DB_USER, IDENTITY_DB_PASSWORD, KAFKA_BOOTSTRAP_SERVERS (MSK),
-# IDENTITY_ISSUER, IDENTITY_CODE_PEPPER, IDENTITY_JWT_PRIVATE_KEY_PEM.
+# IDENTITY_DB_URL (must use sslmode=verify-full), IDENTITY_DB_USER, IDENTITY_DB_PASSWORD,
+# KAFKA_BOOTSTRAP_SERVERS (MSK, TLS listener), IDENTITY_ISSUER, IDENTITY_CODE_PEPPER,
+# IDENTITY_JWT_PRIVATE_KEY_PEM.
+spring:
+  kafka:
+    # TLS to MSK. IAM/SASL auth is added with the Terraform phase (aws-msk-iam-auth).
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:SSL}
+
 parksmart:
   identity:
     jwt:
       generate-ephemeral-key: false
     dev-log-verification-codes: false
+  require-db-tls: true
   kafka:
     replication-factor: 3

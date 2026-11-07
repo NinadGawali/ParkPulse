@@ -11,6 +11,9 @@ parksmart:
   identity:
     jwt:
       generate-ephemeral-key: true
+    codes:
+      resend-cooldown: 0s   # ThrottleIT checks the real limits
+      max-per-hour: 100
   outbox:
     relay:
       enabled: false   # tests read the outbox table directly; OutboxRelayIT turns it on

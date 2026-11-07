@@ -10,6 +10,7 @@ import com.parksmart.identity.application.port.Secrets;
 import com.parksmart.identity.domain.Account;
 import com.parksmart.identity.domain.RefreshToken;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,6 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AuthService {
+
+  /** Absolute lifetime of a login, however often its refresh token is rotated. */
+  static final Duration MAX_SESSION = Duration.ofDays(90);
 
   private final AccountRepository accounts;
   private final RefreshTokenRepository refreshTokens;
@@ -59,25 +63,22 @@ public class AuthService {
     }
     Account account = found.get();
     if (account.isLocked(now)) {
-      throw new ApiException(
-          HttpStatus.TOO_MANY_REQUESTS,
-          "account-locked",
-          "Account temporarily locked",
-          "Too many failed attempts; try again later");
+      // Same response and same work as a wrong password: no lock/existence oracle.
+      passwordHasher.simulateCheck(password);
+      throw invalidCredentials();
     }
     if (!passwordHasher.matches(password, account.passwordHash())) {
-      account.recordFailedLogin(now);
-      accounts.update(account);
+      // Atomic in SQL, so parallel guesses cannot dodge the counter.
+      accounts.recordFailedLogin(account.id(), now);
       throw invalidCredentials();
     }
     if (!account.canLogIn()) {
       throw accountDisabled();
     }
     if (account.failedLoginAttempts() > 0 || account.lockedUntil() != null) {
-      account.recordSuccessfulLogin();
-      accounts.update(account);
+      accounts.resetLoginFailures(account.id());
     }
-    return issue(account, UUID.randomUUID(), now, null);
+    return issue(account, UUID.randomUUID(), now, now, null);
   }
 
   @Transactional(noRollbackFor = ApiException.class)
@@ -90,7 +91,7 @@ public class AuthService {
       refreshTokens.revokeFamily(current.familyId());
       throw invalidRefresh();
     }
-    if (current.isExpired(now)) {
+    if (current.isExpired(now) || now.isAfter(current.familyStartedAt().plus(MAX_SESSION))) {
       throw invalidRefresh();
     }
     Account account = accounts.findById(current.accountId()).orElseThrow(this::invalidRefresh);
@@ -98,7 +99,7 @@ public class AuthService {
       refreshTokens.revokeFamily(current.familyId());
       throw accountDisabled();
     }
-    return issue(account, current.familyId(), now, current);
+    return issue(account, current.familyId(), current.familyStartedAt(), now, current);
   }
 
   @Transactional
@@ -106,13 +107,15 @@ public class AuthService {
     refreshTokens.revokeOwned(secrets.hash(rawRefreshToken), accountId);
   }
 
-  private Tokens issue(Account account, UUID familyId, Instant now, RefreshToken previous) {
+  private Tokens issue(
+      Account account, UUID familyId, Instant familyStartedAt, Instant now, RefreshToken previous) {
     String rawRefresh = secrets.newOpaqueToken();
     RefreshToken next =
         RefreshToken.issue(
             UUID.randomUUID(),
             account.id(),
             familyId,
+            familyStartedAt,
             secrets.hash(rawRefresh),
             now,
             properties.refreshTokenTtl());

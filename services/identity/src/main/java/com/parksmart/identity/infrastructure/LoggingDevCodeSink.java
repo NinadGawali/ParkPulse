@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Logs verification codes so flows can be completed locally before Notification Service exists.
- * Refuses to start under the {@code aws} profile.
+ * Refuses to start unless the {@code local} or {@code test} profile is active.
  */
 @Component
 @ConditionalOnProperty("parksmart.identity.dev-log-verification-codes")
@@ -21,8 +21,9 @@ class LoggingDevCodeSink implements DevCodeSink {
   private static final Logger log = LoggerFactory.getLogger(LoggingDevCodeSink.class);
 
   LoggingDevCodeSink(Environment environment) {
-    if (environment.acceptsProfiles(Profiles.of("aws"))) {
-      throw new IllegalStateException("dev-log-verification-codes must not be enabled on aws");
+    if (!environment.acceptsProfiles(Profiles.of("local | test"))) {
+      throw new IllegalStateException(
+          "dev-log-verification-codes is only allowed with the local or test profile");
     }
   }
 

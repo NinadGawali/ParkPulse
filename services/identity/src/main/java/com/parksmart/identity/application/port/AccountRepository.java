@@ -20,7 +20,17 @@ public interface AccountRepository {
   void insert(Account account);
 
   /**
-   * Saves changes guarded by the version the aggregate was loaded with.
+   * Atomically counts a failed login and, at {@code Account.MAX_FAILED_LOGINS}, locks the account
+   * until {@code now + Account.LOCKOUT}. Not version-guarded, so parallel guesses all count.
+   */
+  void recordFailedLogin(UUID accountId, java.time.Instant now);
+
+  /** Clears the failed-login counter and lock (successful login, password reset). */
+  void resetLoginFailures(UUID accountId);
+
+  /**
+   * Saves changes guarded by the version the aggregate was loaded with. Login counters are not
+   * written here (see {@link #recordFailedLogin}).
    *
    * @throws com.parksmart.identity.domain.DomainException {@code concurrent-modification} if the
    *     row changed meanwhile, {@code phone-in-use} on a phone uniqueness race

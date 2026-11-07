@@ -101,6 +101,29 @@ class JdbcVerificationTokenRepository implements VerificationTokenRepository {
         .update();
   }
 
+  @Override
+  public IssueStats issueStats(UUID accountId, VerificationPurpose purpose, Instant since) {
+    // Serialises concurrent issue requests for the same account+purpose until commit, so two
+    // parallel calls cannot both pass the cooldown check.
+    jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+        .param("key", "verification:" + accountId + ":" + purpose)
+        .query((rs, row) -> 1)
+        .single();
+    return jdbc.sql(
+            """
+            SELECT count(*) FILTER (WHERE created_at >= :since) AS issued_since,
+                   max(created_at) AS last_issued_at
+            FROM verification_tokens
+            WHERE account_id = :accountId AND purpose = :purpose
+            """)
+        .param("since", ts(since))
+        .param("accountId", accountId)
+        .param("purpose", purpose.name())
+        .query(
+            (rs, row) -> new IssueStats(rs.getInt("issued_since"), instant(rs, "last_issued_at")))
+        .single();
+  }
+
   private VerificationToken map(ResultSet rs, int row) throws SQLException {
     return new VerificationToken(
         rs.getObject("id", UUID.class),

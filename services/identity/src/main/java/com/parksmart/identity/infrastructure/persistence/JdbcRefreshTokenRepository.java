@@ -23,12 +23,14 @@ class JdbcRefreshTokenRepository implements RefreshTokenRepository {
   public void insert(RefreshToken token) {
     jdbc.sql(
             """
-            INSERT INTO refresh_tokens (id, account_id, family_id, token_hash, issued_at, expires_at)
-            VALUES (:id, :accountId, :familyId, :hash, :issuedAt, :expiresAt)
+            INSERT INTO refresh_tokens (id, account_id, family_id, family_started_at, token_hash,
+                                        issued_at, expires_at)
+            VALUES (:id, :accountId, :familyId, :familyStartedAt, :hash, :issuedAt, :expiresAt)
             """)
         .param("id", token.id())
         .param("accountId", token.accountId())
         .param("familyId", token.familyId())
+        .param("familyStartedAt", ts(token.familyStartedAt()))
         .param("hash", token.tokenHash())
         .param("issuedAt", ts(token.issuedAt()))
         .param("expiresAt", ts(token.expiresAt()))
@@ -39,7 +41,7 @@ class JdbcRefreshTokenRepository implements RefreshTokenRepository {
   public Optional<RefreshToken> findByHash(String tokenHash) {
     return jdbc.sql(
             """
-            SELECT id, account_id, family_id, token_hash, issued_at, expires_at, revoked,
+            SELECT id, account_id, family_id, family_started_at, token_hash, issued_at, expires_at, revoked,
                    replaced_by_token_id
             FROM refresh_tokens WHERE token_hash = :hash
             """)
@@ -49,6 +51,7 @@ class JdbcRefreshTokenRepository implements RefreshTokenRepository {
                 rs.getObject("id", UUID.class),
                 rs.getObject("account_id", UUID.class),
                 rs.getObject("family_id", UUID.class),
+                instant(rs, "family_started_at"),
                 rs.getString("token_hash"),
                 instant(rs, "issued_at"),
                 instant(rs, "expires_at"),

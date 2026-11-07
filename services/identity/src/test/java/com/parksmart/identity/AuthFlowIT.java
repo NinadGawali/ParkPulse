@@ -119,9 +119,57 @@ class AuthFlowIT extends IntegrationTest {
       postJson("/api/v1/auth/login", new Login(email, "wrong password 1"))
           .andExpect(status().isUnauthorized());
     }
+    // Locked: even the right password gets the same answer as a wrong one (no lock oracle).
     postJson("/api/v1/auth/login", new Login(email, PASSWORD))
-        .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.type").value("https://parksmart.dev/problems/account-locked"));
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.type").value("https://parksmart.dev/problems/invalid-credentials"));
+    assertThat(lockedUntil(email)).isNotNull();
+  }
+
+  @Test
+  void parallel_wrong_passwords_all_count_towards_the_lock() throws Exception {
+    String email = uniqueEmail();
+    register(email);
+    java.util.concurrent.ExecutorService pool =
+        java.util.concurrent.Executors.newFixedThreadPool(5);
+    try {
+      java.util.List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+      for (int i = 0; i < 5; i++) {
+        results.add(
+            pool.submit(() ->
+                postJson("/api/v1/auth/login", new Login(email, "wrong password 1"))
+                    .andReturn()
+                    .getResponse()
+                    .getStatus()));
+      }
+      for (var result : results) {
+        assertThat(result.get()).isEqualTo(401);
+      }
+    } finally {
+      pool.shutdown();
+    }
+    assertThat(lockedUntil(email)).isNotNull();
+  }
+
+  @Test
+  void a_login_older_than_ninety_days_cannot_be_refreshed() throws Exception {
+    String email = uniqueEmail();
+    register(email);
+    String refresh = login(email, PASSWORD).get("refreshToken").asText();
+    jdbc.sql(
+            "UPDATE refresh_tokens SET family_started_at = now() - interval '91 days'"
+                + " WHERE account_id = (SELECT id FROM accounts WHERE email = :e)")
+        .param("e", email)
+        .update();
+    postJson("/api/v1/auth/refresh", new Refresh(refresh)).andExpect(status().isUnauthorized());
+  }
+
+  private java.time.OffsetDateTime lockedUntil(String email) {
+    return jdbc.sql("SELECT locked_until FROM accounts WHERE email = :e")
+        .param("e", email)
+        .query(java.time.OffsetDateTime.class)
+        .optional()
+        .orElse(null);
   }
 
   @Test

@@ -25,9 +25,11 @@ public record IdentityProperties(
     Duration refreshTokenTtl,
     String codePepper,
     Jwt jwt,
-    boolean devLogVerificationCodes) {
+    boolean devLogVerificationCodes,
+    Codes codes) {
 
   public IdentityProperties {
+    codes = codes == null ? new Codes(null, 0) : codes;
     require(issuer, "parksmart.identity.issuer");
     require(codePepper, "parksmart.identity.code-pepper");
     if (codePepper.length() < 32) {
@@ -44,6 +46,19 @@ public record IdentityProperties(
    * @param generateEphemeralKey local/test only: generate a throwaway key when none is set
    */
   public record Jwt(String privateKeyPem, boolean generateEphemeralKey) {}
+
+  /**
+   * Throttling of verification codes per account and purpose.
+   *
+   * @param resendCooldown minimum time between two codes (default 60s)
+   * @param maxPerHour maximum codes per rolling hour (default 5)
+   */
+  public record Codes(Duration resendCooldown, int maxPerHour) {
+    public Codes {
+      resendCooldown = resendCooldown == null ? Duration.ofSeconds(60) : resendCooldown;
+      maxPerHour = maxPerHour <= 0 ? 5 : maxPerHour;
+    }
+  }
 
   private static void require(String value, String name) {
     if (value == null || value.isBlank()) {
