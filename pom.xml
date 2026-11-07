@@ -27,6 +27,7 @@
     <module>services/gateway</module>
     <module>services/profile</module>
     <module>services/listing</module>
+    <module>services/booking</module>
     <!-- services/<name> modules are added by /new-service -->
   </modules>
 

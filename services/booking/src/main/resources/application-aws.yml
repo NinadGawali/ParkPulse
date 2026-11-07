@@ -1,0 +1,14 @@
+# AWS (ECS/EKS). All values are injected as environment variables from Secrets Manager / SSM:
+# BOOKING_DB_URL (must use sslmode=verify-full), BOOKING_DB_USER, BOOKING_DB_PASSWORD,
+# KAFKA_BOOTSTRAP_SERVERS (MSK, TLS listener), IDENTITY_ISSUER, IDENTITY_JWKS_URI,
+# LISTING_URI (internal Listing endpoint, never through the public ALB).
+spring:
+  kafka:
+    # TLS to MSK. IAM/SASL auth is added with the Terraform phase (aws-msk-iam-auth).
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:SSL}
+
+parksmart:
+  require-db-tls: true
+  kafka:
+    replication-factor: 3
