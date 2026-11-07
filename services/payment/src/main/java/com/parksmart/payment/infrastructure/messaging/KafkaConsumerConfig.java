@@ -34,6 +34,8 @@ class KafkaConsumerConfig {
             (record, ex) ->
                 new TopicPartition(Topics.deadLetterTopic(record.topic()), record.partition()));
     DefaultErrorHandler handler = new DefaultErrorHandler(recoverer, backOff);
+    // DomainException = a rule says no (DLT now). Money.ProcessorFailure and anything else are
+    // retried with backoff first: safe, because every processor call is idempotent.
     handler.addNotRetryableExceptions(EventSerializationException.class, DomainException.class);
     return handler;
   }

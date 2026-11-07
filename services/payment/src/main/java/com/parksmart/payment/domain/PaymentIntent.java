@@ -179,6 +179,19 @@ public final class PaymentIntent {
     touch(now);
   }
 
+  /** Validates a refund before the processor is called (state, amount, what is left). */
+  public void checkRefundable(BigDecimal refund) {
+    require(Status.CAPTURED, Status.PARTIALLY_REFUNDED);
+    if (refund.signum() <= 0 || refund.scale() > 2) {
+      throw new DomainException(
+          "invalid-amount", "refund must be positive with at most 2 decimals");
+    }
+    if (refund.compareTo(remaining()) > 0) {
+      throw new DomainException(
+          "refund-exceeds-captured", "Refund exceeds the remaining captured amount");
+    }
+  }
+
   /** Refunds part or all of what is left. Returns the refund applied. */
   public BigDecimal refunded(BigDecimal refund, Instant now) {
     require(Status.CAPTURED, Status.PARTIALLY_REFUNDED);

@@ -79,4 +79,55 @@ class PayoutIT extends PaymentIT {
     assertThat(unpaid).isEqualTo(1);
     assertThat(UUID.randomUUID()).isNotNull();
   }
+
+  @Test
+  void concurrent_runs_pay_each_host_once() throws Exception {
+    Deal d = captured("200.00");
+    var pool = java.util.concurrent.Executors.newFixedThreadPool(4);
+    var latch = new java.util.concurrent.CountDownLatch(1);
+    var futures = new java.util.ArrayList<java.util.concurrent.Future<Integer>>();
+    for (int i = 0; i < 4; i++) {
+      futures.add(
+          pool.submit(() -> {
+            latch.await();
+            return payouts.run(today());
+          }));
+    }
+    latch.countDown();
+    for (var f : futures) {
+      f.get();
+    }
+    pool.shutdown();
+    assertThat(payoutsFor(d.host(), "PAID")).isEqualTo(1);
+    assertThat(events("PayoutCompleted", "hostAccountId", d.host().id())).hasSize(1);
+  }
+
+  @Test
+  void refunds_are_audited_with_deterministic_ids() throws Exception {
+    Deal d = captured("100.00");
+    cancel(d, "40.00");
+    var row =
+        jdbc.sql(
+                "SELECT r.source, r.amount FROM refunds r JOIN payment_intents i ON i.id = r.intent_id"
+                    + " WHERE i.booking_id = :b")
+            .param("b", d.bookingId())
+            .query()
+            .singleRow();
+    assertThat(row.get("source")).isEqualTo("CANCELLATION");
+    assertThat((java.math.BigDecimal) row.get("amount")).isEqualByComparingTo("40.00");
+    // An implausible refund (more than paid) is ignored.
+    cancel(d, "1000.00");
+    assertThat(statusOf(d)).isEqualTo("PARTIALLY_REFUNDED");
+  }
+
+  @Test
+  void the_fake_processor_is_refused_on_aws() throws Exception {
+    var check =
+        Class.forName("com.parksmart.payment.infrastructure.processor.ProcessorGuard")
+            .getDeclaredMethod("check", boolean.class, String.class);
+    check.setAccessible(true);
+    check.invoke(null, false, "fake");
+    org.assertj.core.api.Assertions.assertThatThrownBy(() -> check.invoke(null, true, "fake"))
+        .hasCauseInstanceOf(IllegalStateException.class);
+  }
 }

@@ -102,19 +102,23 @@ public class PaymentSaga {
       return;
     }
     BigDecimal refund = refundAmount == null ? BigDecimal.ZERO : refundAmount;
+    if (refund.signum() < 0 || refund.compareTo(intent.amount()) > 0 || refund.scale() > 2) {
+      log.warn("Implausible refund for booking {}; ignored", bookingId);
+      return;
+    }
     switch (intent.status()) {
       case CREATED -> money.voidIntent(intent, "booking cancelled");
       case AUTHORIZED -> {
         if (refund.compareTo(intent.amount()) >= 0) {
           money.voidIntent(intent, "booking cancelled");
         } else if (money.capture(intent) && refund.signum() > 0) {
-          money.refund(intent, refund);
+          money.refund(intent, refund, "CANCELLATION", null, "booking cancelled");
         }
       }
       case CAPTURED, PARTIALLY_REFUNDED -> {
         BigDecimal applicable = refund.min(intent.remaining());
         if (applicable.signum() > 0) {
-          money.refund(intent, applicable);
+          money.refund(intent, applicable, "CANCELLATION", null, "booking cancelled");
         }
       }
       default -> log.info("Booking {} cancelled; payment is {}", bookingId, intent.status());

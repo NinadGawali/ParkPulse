@@ -74,6 +74,30 @@ class JdbcLedgerRepository implements LedgerRepository {
   }
 
   @Override
+  public void recordRefund(
+      UUID refundId,
+      UUID intentId,
+      BigDecimal amount,
+      String source,
+      UUID actor,
+      String reason,
+      Instant at) {
+    jdbc.sql(
+            """
+            INSERT INTO refunds (id, intent_id, amount, source, actor_id, reason, created_at)
+            VALUES (:id, :intent, :amount, :source, :actor, :reason, :at)
+            """)
+        .param("id", refundId)
+        .param("intent", intentId)
+        .param("amount", amount)
+        .param("source", source)
+        .param("actor", actor)
+        .param("reason", reason)
+        .param("at", ts(at))
+        .update();
+  }
+
+  @Override
   public BigDecimal commissionRateAt(Instant at) {
     return jdbc.sql(
             """
@@ -108,17 +132,56 @@ class JdbcLedgerRepository implements LedgerRepository {
   }
 
   @Override
-  public void assignToPayout(UUID hostAccountId, Instant cutoff, UUID payoutId) {
-    jdbc.sql(
-            """
-            UPDATE ledger_entries SET payout_id = :payout
-            WHERE account_id = :host AND account_type = 'HOST' AND payout_id IS NULL
-              AND created_at < :cutoff
-            """)
-        .param("payout", payoutId)
-        .param("host", hostAccountId)
-        .param("cutoff", ts(cutoff))
+  public void lockHost(UUID hostAccountId) {
+    jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))")
+        .param("k", "payout:" + hostAccountId)
+        .query((rs, n) -> 1)
+        .single();
+  }
+
+  @Override
+  public BigDecimal assignToPayout(UUID hostAccountId, Instant cutoff, UUID payoutId) {
+    List<BigDecimal> signed =
+        jdbc.sql(
+                "UPDATE ledger_entries SET payout_id = :payout"
+                    + " WHERE account_id = :host AND account_type = 'HOST' AND payout_id IS NULL"
+                    + " AND created_at < :cutoff RETURNING "
+                    + SIGNED)
+            .param("payout", payoutId)
+            .param("host", hostAccountId)
+            .param("cutoff", ts(cutoff))
+            .query(BigDecimal.class)
+            .list();
+    return signed.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+  }
+
+  @Override
+  public void setPayoutAmount(UUID payoutId, BigDecimal amount) {
+    jdbc.sql("UPDATE payouts SET amount = :a WHERE id = :id")
+        .param("a", amount)
+        .param("id", payoutId)
         .update();
+  }
+
+  @Override
+  public List<Payout> stalePending(Instant olderThan) {
+    return jdbc.sql(
+            "SELECT id, host_account_id, amount, currency, period_start, period_end, status,"
+                + " failure_reason, created_at FROM payouts WHERE status = 'PENDING'"
+                + " AND created_at < :t ORDER BY created_at")
+        .param("t", ts(olderThan))
+        .query((rs, n) ->
+            new Payout(
+                rs.getObject("id", UUID.class),
+                rs.getObject("host_account_id", UUID.class),
+                rs.getBigDecimal("amount"),
+                rs.getString("currency"),
+                rs.getObject("period_start", LocalDate.class),
+                rs.getObject("period_end", LocalDate.class),
+                rs.getString("status"),
+                rs.getString("failure_reason"),
+                instant(rs, "created_at")))
+        .list();
   }
 
   @Override
@@ -148,20 +211,21 @@ class JdbcLedgerRepository implements LedgerRepository {
   }
 
   @Override
-  public void markPayout(
+  public boolean finishPayout(
       UUID payoutId, String status, String processorRef, String failureReason, Instant at) {
-    jdbc.sql(
-            """
-            UPDATE payouts SET status = :status, processor_payout_ref = :ref,
-              failure_reason = :reason, updated_at = :at
-            WHERE id = :id
-            """)
-        .param("status", status)
-        .param("ref", processorRef)
-        .param("reason", failureReason)
-        .param("at", ts(at))
-        .param("id", payoutId)
-        .update();
+    return jdbc.sql(
+                """
+                UPDATE payouts SET status = :status, processor_payout_ref = :ref,
+                  failure_reason = :reason, updated_at = :at
+                WHERE id = :id AND status = 'PENDING'
+                """)
+            .param("status", status)
+            .param("ref", processorRef)
+            .param("reason", failureReason)
+            .param("at", ts(at))
+            .param("id", payoutId)
+            .update()
+        == 1;
   }
 
   @Override

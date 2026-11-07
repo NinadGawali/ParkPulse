@@ -19,6 +19,16 @@ public interface LedgerRepository {
       List<Posting> postings,
       Instant at);
 
+  /** Audit row for a refund (its ID is also the processor idempotency key). */
+  void recordRefund(
+      UUID refundId,
+      UUID intentId,
+      BigDecimal amount,
+      String source,
+      UUID actor,
+      String reason,
+      Instant at);
+
   /** The commission rate (percent) effective at {@code at}. */
   BigDecimal commissionRateAt(Instant at);
 
@@ -27,8 +37,20 @@ public interface LedgerRepository {
   /** Hosts whose not-yet-paid entries (created before {@code cutoff}) net to a positive amount. */
   List<HostBalance> unpaidHostBalances(Instant cutoff);
 
-  /** Attaches a host's unpaid entries created before {@code cutoff} to the payout. */
-  void assignToPayout(UUID hostAccountId, Instant cutoff, UUID payoutId);
+  /** Serializes payout work for one host (transaction-scoped; across instances). */
+  void lockHost(UUID hostAccountId);
+
+  /**
+   * Attaches a host's unpaid entries created before {@code cutoff} to the payout.
+   *
+   * @return the net (credits - debits) of exactly the entries attached
+   */
+  BigDecimal assignToPayout(UUID hostAccountId, Instant cutoff, UUID payoutId);
+
+  void setPayoutAmount(UUID payoutId, BigDecimal amount);
+
+  /** PENDING payouts created before {@code olderThan} (a run that stopped before finishing). */
+  List<Payout> stalePending(Instant olderThan);
 
   /** A failed payout's entries become unpaid again (picked up by the next run). */
   void releasePayout(UUID payoutId);
@@ -46,7 +68,8 @@ public interface LedgerRepository {
 
   void insertPayout(Payout payout);
 
-  void markPayout(
+  /** Moves a PENDING payout to its final state; false if it was already finalized. */
+  boolean finishPayout(
       UUID payoutId, String status, String processorRef, String failureReason, Instant at);
 
   /** Newest first, keyset after {@code (afterCreated, afterId)}. */

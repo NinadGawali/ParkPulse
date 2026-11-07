@@ -10,7 +10,6 @@ import com.parksmart.payment.application.port.EventOutbox;
 import com.parksmart.payment.application.port.IntentRepository;
 import com.parksmart.payment.application.port.LedgerRepository;
 import com.parksmart.payment.application.port.PaymentProcessor;
-import com.parksmart.payment.domain.DomainException;
 import com.parksmart.payment.domain.Ledger;
 import com.parksmart.payment.domain.PaymentIntent;
 import java.math.BigDecimal;
@@ -26,6 +25,13 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class Money {
+
+  /** The processor could not complete an operation; retried (then dead-lettered) by Kafka. */
+  public static final class ProcessorFailure extends RuntimeException {
+    ProcessorFailure(String message) {
+      super(message);
+    }
+  }
 
   private final IntentRepository intents;
   private final LedgerRepository ledger;
@@ -81,6 +87,8 @@ public class Money {
     PaymentProcessor.Result result =
         processor.capture(intent.id(), intent.processorRef(), intent.amount());
     if (!result.ok()) {
+      // Release the hold: the money will not be taken.
+      processor.voidAuthorization(intent.id(), intent.processorRef());
       intent.captureFailed(result.failureCode(), now);
       intents.update(intent);
       outbox.publish(
@@ -129,18 +137,21 @@ public class Money {
   }
 
   /** Refunds {@code amount} of a captured intent; pro-rata ledger reversal. */
-  void refund(PaymentIntent intent, BigDecimal amount) {
+  void refund(PaymentIntent intent, BigDecimal amount, String source, UUID actor, String reason) {
+    intent.checkRefundable(amount);
     BigDecimal before = intent.refundedAmount();
-    if (amount.compareTo(intent.remaining()) > 0) {
-      throw new DomainException(
-          "refund-exceeds-captured", "Refund exceeds the remaining captured amount");
-    }
-    UUID refundId = UUID.randomUUID();
+    // Deterministic: a retried refund (Kafka redelivery, client retry after a rollback) sends the
+    // processor the same idempotency key, so it can never refund twice.
+    UUID refundId =
+        UUID.nameUUIDFromBytes(
+            (intent.id() + "|" + before.toPlainString() + "|" + amount.toPlainString())
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
     PaymentProcessor.Result result = processor.refund(refundId, intent.processorRef(), amount);
     if (!result.ok()) {
-      throw new DomainException("refund-failed", "The processor rejected the refund");
+      throw new ProcessorFailure("refund rejected: " + result.failureCode());
     }
     Instant now = clock.instant();
+    ledger.recordRefund(refundId, intent.id(), amount, source, actor, reason, now);
     BigDecimal applied = intent.refunded(amount, now);
     intents.update(intent);
     ledger.post(intent, "REFUND", refundId, Ledger.refund(intent, applied, before), now);

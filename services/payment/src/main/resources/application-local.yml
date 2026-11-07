@@ -21,3 +21,5 @@ parksmart:
     jwt:
       issuer: ${IDENTITY_ISSUER:https://identity.parksmart.local}
       jwks-uri: http://localhost:${IDENTITY_PORT:8081}/.well-known/jwks.json
+  payment:
+    processor: fake

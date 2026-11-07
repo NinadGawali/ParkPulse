@@ -9,6 +9,7 @@ IDENTITY_JWKS_URI: http://localhost:1/unused-tests-provide-a-decoder
 
 parksmart:
   payment:
+    processor: fake
     payouts:
       enabled: false   # tests run the payout job directly
   outbox:

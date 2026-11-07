@@ -74,7 +74,15 @@ public class PaymentService {
   /** Manual (dispute) refund of a captured intent, up to what is left. */
   @Transactional
   public PaymentIntent adminRefund(
-      UUID adminId, UUID intentId, String idempotencyKey, BigDecimal amount, String reason) {
+      AuthenticatedAccount admin,
+      UUID intentId,
+      String idempotencyKey,
+      BigDecimal amount,
+      String reason) {
+    if (!admin.isAdmin()) {
+      throw ApiException.forbidden("Requires role ADMIN");
+    }
+    UUID adminId = admin.accountId();
     PaymentIntent intent =
         intents.lockById(intentId).orElseThrow(() -> ApiException.notFound("Payment"));
     String hash = hash(intentId + "|" + amount.toPlainString() + "|" + reason);
@@ -82,7 +90,7 @@ public class PaymentService {
     if (earlier.isPresent()) {
       return replay(earlier.get(), hash, intent);
     }
-    money.refund(intent, amount);
+    money.refund(intent, amount, "ADMIN", adminId, reason);
     intents.saveKey(ADMIN_REFUND, adminId, idempotencyKey, hash, intentId, clock.instant());
     return intent;
   }

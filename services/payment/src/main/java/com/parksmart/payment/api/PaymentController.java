@@ -137,7 +137,7 @@ class PaymentController {
       @PathVariable UUID intentId,
       @RequestHeader("Idempotency-Key") String key,
       @Valid @RequestBody RefundRequest body) {
-    UUID admin = CurrentAccount.requireRole(Role.ADMIN).accountId();
+    var admin = CurrentAccount.requireRole(Role.ADMIN);
     return IntentResponse.of(
         payments.adminRefund(
             admin, intentId, checked(key), new BigDecimal(body.amount()), body.reason()));

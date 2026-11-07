@@ -55,7 +55,7 @@ parksmart:
       audience: parksmart-api
       jwks-uri: ${IDENTITY_JWKS_URI}
   payment:
-    processor: fake
+    processor: ${PAYMENT_PROCESSOR}   # local/test: fake; aws: a real adapter
     payouts:
       cron: "0 0 2 * * MON"   # Mondays 02:00 UTC: pays out the previous week
   kafka:
