@@ -51,10 +51,8 @@ class JpaPhotoUploadRepository implements PhotoUploadRepository {
   }
 
   @Override
-  public List<PhotoUpload> findExpiredUnconfirmed(Instant cutoff, int limit) {
-    return jpa
-        .findByConfirmedAtIsNullAndExpiresAtBeforeOrderByExpiresAtAsc(cutoff, Limit.of(limit))
-        .stream()
+  public List<PhotoUpload> findExpired(Instant cutoff, int limit) {
+    return jpa.findByExpiresAtBeforeOrderByExpiresAtAsc(cutoff, Limit.of(limit)).stream()
         .map(JpaPhotoUploadRepository::toDomain)
         .toList();
   }

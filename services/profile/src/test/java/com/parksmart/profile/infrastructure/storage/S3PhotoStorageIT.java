@@ -63,7 +63,7 @@ class S3PhotoStorageIT {
   @Test
   void presigned_put_then_stat_read_head_and_delete() throws Exception {
     byte[] png = Arrays.copyOf(new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 64);
-    String key = "profiles/acc/upload-1";
+    String key = "uploads/acc/upload-1";
     PresignedUpload upload =
         storage.presignPut(key, "image/png", png.length, Duration.ofMinutes(5));
     assertThat(upload.requiredHeaders()).containsKey("Content-Type");
@@ -90,6 +90,11 @@ class S3PhotoStorageIT {
     assertThat(storage.readHead(key, 8)).hasSize(8).startsWith((byte) 0x89, (byte) 'P');
     assertThat(storage.publicUrl(key)).isEqualTo("http://cdn.test/test-photos/" + key);
 
+    storage.copy(key, key + "-copy");
+    assertThat(storage.stat(key + "-copy"))
+        .hasValueSatisfying(o -> assertThat(o.contentType()).isEqualTo("image/png"));
+    storage.delete(key + "-copy");
+
     storage.delete(key);
     assertThat(storage.stat(key)).isEmpty();
     storage.delete(key); // missing objects are ignored
@@ -97,7 +102,7 @@ class S3PhotoStorageIT {
 
   @Test
   void a_presigned_url_rejects_a_different_content_type() throws Exception {
-    String key = "profiles/acc/upload-2";
+    String key = "uploads/acc/upload-2";
     PresignedUpload upload = storage.presignPut(key, "image/png", 4, Duration.ofMinutes(5));
     HttpRequest put =
         HttpRequest.newBuilder(URI.create(upload.url()))

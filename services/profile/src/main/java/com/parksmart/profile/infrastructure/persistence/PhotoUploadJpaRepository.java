@@ -19,6 +19,5 @@ interface PhotoUploadJpaRepository extends JpaRepository<PhotoUploadEntity, UUID
 
   long countByAccountIdAndConfirmedAtIsNullAndExpiresAtAfter(UUID accountId, Instant now);
 
-  List<PhotoUploadEntity> findByConfirmedAtIsNullAndExpiresAtBeforeOrderByExpiresAtAsc(
-      Instant cutoff, Limit limit);
+  List<PhotoUploadEntity> findByExpiresAtBeforeOrderByExpiresAtAsc(Instant cutoff, Limit limit);
 }

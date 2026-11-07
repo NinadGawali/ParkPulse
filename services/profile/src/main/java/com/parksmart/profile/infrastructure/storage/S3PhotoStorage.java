@@ -94,6 +94,15 @@ class S3PhotoStorage implements PhotoStorage {
   }
 
   @Override
+  public void copy(String fromKey, String toKey) {
+    s3.copyObject(r ->
+        r.sourceBucket(properties.bucket())
+            .sourceKey(fromKey)
+            .destinationBucket(properties.bucket())
+            .destinationKey(toKey));
+  }
+
+  @Override
   public void delete(String objectKey) {
     s3.deleteObject(r -> r.bucket(properties.bucket()).key(objectKey));
   }

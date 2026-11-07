@@ -2,6 +2,7 @@ package com.parksmart.profile.infrastructure.messaging;
 
 import com.parksmart.common.events.EventJson.EventSerializationException;
 import com.parksmart.common.events.Topics;
+import com.parksmart.profile.domain.DomainException;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -33,7 +34,7 @@ class KafkaConsumerConfig {
             (record, ex) ->
                 new TopicPartition(Topics.deadLetterTopic(record.topic()), record.partition()));
     DefaultErrorHandler handler = new DefaultErrorHandler(recoverer, backOff);
-    handler.addNotRetryableExceptions(EventSerializationException.class);
+    handler.addNotRetryableExceptions(EventSerializationException.class, DomainException.class);
     return handler;
   }
 }

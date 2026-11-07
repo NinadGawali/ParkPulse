@@ -45,11 +45,11 @@ public class VehicleService {
         .toList();
   }
 
-  /** Owner or admin may read. */
+  /** Owner only, like every other vehicle endpoint. */
   @Transactional(readOnly = true)
   public Vehicle get(AuthenticatedAccount caller, UUID vehicleId) {
     Vehicle vehicle = vehicles.findActive(vehicleId).orElseThrow(() -> notFound());
-    if (!caller.ownsOrAdmin(vehicle.ownerAccountId())) {
+    if (!vehicle.isOwnedBy(caller.accountId())) {
       throw ApiException.forbidden("Not your vehicle");
     }
     return vehicle;
@@ -94,9 +94,9 @@ public class VehicleService {
   /** Soft delete; the oldest remaining vehicle takes over as primary. */
   @Transactional
   public void remove(UUID callerId, UUID vehicleId) {
+    profiles.lockAccount(callerId, clock.instant());
     Instant now = clock.instant();
     Vehicle vehicle = owned(callerId, vehicleId);
-    profiles.lockAccount(callerId, now);
     boolean wasPrimary = vehicle.remove(now);
     vehicles.save(vehicle);
     if (wasPrimary) {
@@ -112,12 +112,12 @@ public class VehicleService {
 
   @Transactional
   public Vehicle makePrimary(UUID callerId, UUID vehicleId) {
+    profiles.lockAccount(callerId, clock.instant());
     Instant now = clock.instant();
     Vehicle vehicle = owned(callerId, vehicleId);
     if (vehicle.primary()) {
       return vehicle;
     }
-    profiles.lockAccount(callerId, now);
     for (Vehicle other : vehicles.listActive(callerId)) {
       if (other.primary()) {
         other.clearPrimary(now);
@@ -129,7 +129,7 @@ public class VehicleService {
     return vehicle;
   }
 
-  /** Mutations: owner only (admins included in the 403). */
+  /** Owner only (admins get 403 too). */
   private Vehicle owned(UUID callerId, UUID vehicleId) {
     Vehicle vehicle = vehicles.findActive(vehicleId).orElseThrow(() -> notFound());
     if (!vehicle.isOwnedBy(callerId)) {

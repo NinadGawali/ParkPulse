@@ -36,7 +36,11 @@ public final class PhotoUpload {
     this.confirmedAt = confirmedAt;
   }
 
-  /** Object keys are server-chosen, so a client can never write outside its own prefix. */
+  /**
+   * Object keys are server-chosen, so a client can never write outside its own prefix. The client
+   * uploads to a private staging key; confirm copies it to {@link #photoKey()}, which no presigned
+   * URL can write, and validates the copy.
+   */
   public static PhotoUpload start(
       UUID id,
       UUID accountId,
@@ -47,7 +51,7 @@ public final class PhotoUpload {
     if (contentLength < 1 || contentLength > MAX_BYTES) {
       throw new DomainException("invalid-contentLength", "contentLength must be 1-" + MAX_BYTES);
     }
-    String key = "profiles/" + accountId + "/" + id;
+    String key = "uploads/" + accountId + "/" + id;
     return new PhotoUpload(id, accountId, key, type, contentLength, now.plus(ttl), null);
   }
 
@@ -72,6 +76,11 @@ public final class PhotoUpload {
       throw new DomainException("upload-expired", "Upload slot has expired; request a new one");
     }
     confirmedAt = now;
+  }
+
+  /** The public key the confirmed photo is served from. */
+  public String photoKey() {
+    return "profiles/" + accountId + "/photo-" + id;
   }
 
   public boolean isOwnedBy(UUID account) {

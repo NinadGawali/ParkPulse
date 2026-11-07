@@ -78,7 +78,7 @@ public final class Profile {
     displayName = name;
     bio = cleanBio;
     city = cleanCity;
-    updatedAt = now;
+    touch(now);
     return publicChange;
   }
 
@@ -87,7 +87,7 @@ public final class Profile {
     Objects.requireNonNull(newPhoto, "newPhoto");
     ProfilePhoto previous = photo;
     photo = newPhoto;
-    updatedAt = now;
+    touch(now);
     return Optional.ofNullable(previous);
   }
 
@@ -96,7 +96,7 @@ public final class Profile {
     ProfilePhoto previous = photo;
     if (previous != null) {
       photo = null;
-      updatedAt = now;
+      touch(now);
     }
     return Optional.ofNullable(previous);
   }
@@ -109,12 +109,26 @@ public final class Profile {
    */
   public boolean applyRating(BigDecimal average, int count, Instant asOf) {
     Objects.requireNonNull(asOf, "asOf");
+    boolean outOfRange =
+        average != null
+            && (average.compareTo(BigDecimal.ONE) < 0
+                || average.compareTo(BigDecimal.valueOf(5)) > 0);
+    if (count < 0 || outOfRange || (count > 0 && average == null)) {
+      throw new DomainException("invalid-rating", "Rating must be 1-5 with a count >= 0");
+    }
     if (rating.asOf() != null && !asOf.isAfter(rating.asOf())) {
       return false;
     }
     BigDecimal rounded = average == null ? null : average.setScale(2, RoundingMode.HALF_UP);
     rating = new DriverRating(count == 0 ? null : rounded, count, asOf);
     return true;
+  }
+
+  /** updatedAt only moves forward, so event consumers can use it for last-writer-wins. */
+  private void touch(Instant now) {
+    if (now.isAfter(updatedAt)) {
+      updatedAt = now;
+    }
   }
 
   public boolean hasPhoto() {

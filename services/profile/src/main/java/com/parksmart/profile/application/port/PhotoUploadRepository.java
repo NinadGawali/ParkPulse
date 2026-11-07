@@ -16,8 +16,8 @@ public interface PhotoUploadRepository {
   /** Unconfirmed uploads of an account that have not expired yet. */
   long countPending(UUID accountId, Instant now);
 
-  /** Unconfirmed uploads that expired before {@code cutoff}, oldest first. */
-  List<PhotoUpload> findExpiredUnconfirmed(Instant cutoff, int limit);
+  /** Upload slots (confirmed or not) whose URL expired before {@code cutoff}, oldest first. */
+  List<PhotoUpload> findExpired(Instant cutoff, int limit);
 
   void delete(UUID id);
 }

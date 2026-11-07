@@ -65,8 +65,8 @@ public class ProfilePhotoService {
             .orElseThrow(() ->
                 new DomainException(
                     "invalid-contentType", "contentType must be jpeg, png or webp"));
+    profiles.lockAccount(accountId, clock.instant());
     Instant now = clock.instant();
-    profiles.lockAccount(accountId, now);
     if (uploads.countPending(accountId, now) >= PhotoUpload.MAX_PENDING) {
       throw new DomainException(
           "too-many-pending-uploads",
@@ -88,8 +88,8 @@ public class ProfilePhotoService {
    */
   @Transactional
   public Profile confirm(UUID accountId, UUID uploadId) {
+    profiles.lockAccount(accountId, clock.instant());
     Instant now = clock.instant();
-    profiles.lockAccount(accountId, now);
     PhotoUpload upload =
         uploads
             .findForUpdate(uploadId)
@@ -97,38 +97,44 @@ public class ProfilePhotoService {
             .orElseThrow(() -> ApiException.notFound("Upload"));
     upload.confirm(now);
 
-    StoredObject stored =
-        storage
-            .stat(upload.objectKey())
-            .orElseThrow(
-                () -> new DomainException("upload-missing", "No file was uploaded for this slot"));
-    boolean matches =
-        stored.contentLength() == upload.contentLength()
-            && upload.contentType().mediaType().equalsIgnoreCase(stored.contentType())
-            && upload
-                .contentType()
-                .matchesSignature(
-                    storage.readHead(upload.objectKey(), PhotoContentType.SIGNATURE_BYTES));
-    if (!matches) {
+    if (storage.stat(upload.objectKey()).isEmpty()) {
+      throw new DomainException("upload-missing", "No file was uploaded for this slot");
+    }
+    // Copy first, then validate the copy: the presigned URL stays valid until it expires, but
+    // it can only write the private staging key, never the public photo key.
+    String photoKey = upload.photoKey();
+    storage.copy(upload.objectKey(), photoKey);
+    if (!matchesDeclared(upload, photoKey)) {
+      storage.delete(photoKey);
       throw new DomainException(
           "upload-mismatch", "Uploaded file does not match the declared image type and size");
     }
 
     Profile profile = profiles.findById(accountId).orElseThrow();
     Optional<ProfilePhoto> previous =
-        profile.replacePhoto(
-            new ProfilePhoto(upload.objectKey(), storage.publicUrl(upload.objectKey())), now);
+        profile.replacePhoto(new ProfilePhoto(photoKey, storage.publicUrl(photoKey)), now);
     profiles.save(profile);
     uploads.save(upload);
     outbox.publish(ProfileService.updatedEvent(profile));
+    deleteAfterCommit(upload.objectKey());
     previous.ifPresent(photo -> deleteAfterCommit(photo.objectKey()));
     return profile;
   }
 
+  private boolean matchesDeclared(PhotoUpload upload, String key) {
+    Optional<StoredObject> stored = storage.stat(key);
+    return stored.isPresent()
+        && stored.get().contentLength() == upload.contentLength()
+        && upload.contentType().mediaType().equalsIgnoreCase(stored.get().contentType())
+        && upload
+            .contentType()
+            .matchesSignature(storage.readHead(key, PhotoContentType.SIGNATURE_BYTES));
+  }
+
   @Transactional
   public void delete(UUID accountId) {
+    profiles.lockAccount(accountId, clock.instant());
     Instant now = clock.instant();
-    profiles.lockAccount(accountId, now);
     Profile profile = profiles.findById(accountId).orElseThrow();
     Optional<ProfilePhoto> previous = profile.removePhoto(now);
     if (previous.isEmpty()) {
@@ -139,11 +145,13 @@ public class ProfilePhotoService {
     deleteAfterCommit(previous.get().objectKey());
   }
 
-  /** Removes uploads that were never confirmed, and their objects. Returns how many. */
+  /**
+   * Removes expired upload slots and their staging objects, including re-uploads made with a URL
+   * after confirm. Confirmed photos live under their own key and are not touched.
+   */
   @Transactional
-  public int purgeAbandonedUploads(int limit) {
-    List<PhotoUpload> expired =
-        uploads.findExpiredUnconfirmed(clock.instant().minus(CLEANUP_GRACE), limit);
+  public int purgeExpiredUploads(int limit) {
+    List<PhotoUpload> expired = uploads.findExpired(clock.instant().minus(CLEANUP_GRACE), limit);
     for (PhotoUpload upload : expired) {
       uploads.delete(upload.id());
       deleteAfterCommit(upload.objectKey());

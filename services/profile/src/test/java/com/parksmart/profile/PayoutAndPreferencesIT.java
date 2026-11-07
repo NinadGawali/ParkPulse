@@ -64,9 +64,12 @@ class PayoutAndPreferencesIT extends IntegrationTest {
     User host = host();
     String token = token();
     postJson(PAYOUTS, payout(token), host).andExpect(status().isCreated());
-    postJson(PAYOUTS, payout(token), host())
+    postJson(PAYOUTS, payout(token), host)
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.type").value("https://parksmart.dev/problems/payout-registered"));
+    // Another host cannot be blocked (or learn anything) by a token someone else added;
+    // Payment verifies ownership with the processor before paying out.
+    postJson(PAYOUTS, payout(token), host()).andExpect(status().isCreated());
     postJson(PAYOUTS, payout(token()), host).andExpect(status().isCreated());
     postJson(PAYOUTS, payout(token()), host).andExpect(status().isCreated());
     postJson(PAYOUTS, payout(token()), host)

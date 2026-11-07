@@ -43,8 +43,8 @@ class JpaPayoutAccountRepository implements PayoutAccountRepository {
     try {
       jpa.saveAndFlush(entity);
     } catch (DataIntegrityViolationException e) {
-      if (ConstraintViolations.violated(e, "uq_payout_processor_token")) {
-        throw new DomainException("payout-registered", "This payout account is already registered");
+      if (ConstraintViolations.violated(e, "uq_payout_token_per_host")) {
+        throw new DomainException("payout-registered", "You already added this payout account");
       }
       throw e;
     }

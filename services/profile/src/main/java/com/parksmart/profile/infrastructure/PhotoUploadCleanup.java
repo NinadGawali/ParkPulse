@@ -7,7 +7,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** Removes photo uploads that were never confirmed (and their objects). */
+/** Removes expired photo upload slots and their staging objects. */
 @Component
 @ConditionalOnProperty(value = "parksmart.profile.upload-cleanup.enabled", matchIfMissing = true)
 class PhotoUploadCleanup {
@@ -23,9 +23,9 @@ class PhotoUploadCleanup {
 
   @Scheduled(fixedDelayString = "PT15M", initialDelayString = "PT2M")
   void purge() {
-    int removed = photos.purgeAbandonedUploads(BATCH);
+    int removed = photos.purgeExpiredUploads(BATCH);
     if (removed > 0) {
-      log.info("Removed {} abandoned photo uploads", removed);
+      log.info("Removed {} expired photo upload slots", removed);
     }
   }
 }

@@ -92,9 +92,9 @@ class VehicleIT extends IntegrationTest {
     post(path + "/primary", stranger).andExpect(status().isForbidden());
     delete(path, stranger).andExpect(status().isForbidden());
 
-    // Admins may read but not change.
+    // Plates are personal data: admins get 403 too (the contract says owner only).
     User admin = user("ADMIN");
-    get(path, admin).andExpect(status().isOk());
+    get(path, admin).andExpect(status().isForbidden());
     delete(path, admin).andExpect(status().isForbidden());
 
     get(path, owner).andExpect(status().isOk()).andExpect(jsonPath("$.vehicleType").value("SEDAN"));

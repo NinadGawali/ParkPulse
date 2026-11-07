@@ -72,6 +72,28 @@ class ProfileTest {
   }
 
   @Test
+  void impossible_ratings_are_rejected() {
+    for (BigDecimal bad : new BigDecimal[] {new BigDecimal("0.5"), new BigDecimal("5.01")}) {
+      assertThatThrownBy(() -> profile.applyRating(bad, 1, T0))
+          .extracting("code")
+          .isEqualTo("invalid-rating");
+    }
+    assertThatThrownBy(() -> profile.applyRating(null, 2, T0))
+        .extracting("code")
+        .isEqualTo("invalid-rating");
+    assertThatThrownBy(() -> profile.applyRating(BigDecimal.ONE, -1, T0))
+        .extracting("code")
+        .isEqualTo("invalid-rating");
+  }
+
+  @Test
+  void updated_at_never_moves_backwards() {
+    profile.replacePhoto(new ProfilePhoto("k", "u"), T0.plusSeconds(11));
+    profile.removePhoto(T0.plusSeconds(10)); // a request that read the clock earlier
+    assertThat(profile.updatedAt()).isEqualTo(T0.plusSeconds(11));
+  }
+
+  @Test
   void older_ratings_never_overwrite_newer_ones() {
     assertThat(profile.applyRating(new BigDecimal("4.333"), 3, T0.plusSeconds(10))).isTrue();
     assertThat(profile.rating().average()).isEqualByComparingTo("4.33");

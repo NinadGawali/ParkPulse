@@ -11,8 +11,10 @@ info:
       call if the event has not been processed yet.
     - `GET /profiles/{accountId}` returns only the public shape (display name, photo, driver rating).
     - Driver ratings are cached from `RatingAggregateUpdated` (Review Service computes them).
-    - Events: `ProfileUpdated` (display name or photo changed; `hasPhoto` feeds Listing's host
-      eligibility), `VehicleAdded`, `VehicleRemoved`, all on `profile.profile.v1`.
+    - Events: `ProfileUpdated` (emitted on every photo set/remove and when the display name
+      changes, never for bio/city; `hasPhoto` feeds Listing's host eligibility and `updatedAt` only
+      moves forward, so consumers can apply last-writer-wins), `VehicleAdded`, `VehicleRemoved`,
+      all on `profile.profile.v1`.
     - Every `/me` endpoint acts on the caller (JWT `sub`). Vehicle and payout-account endpoints with
       an ID return 403 when the resource belongs to someone else.
 servers:
@@ -92,8 +94,9 @@ paths:
       tags: [photos]
       operationId: confirmProfilePhotoUpload
       description: |
-        Checks that the object exists with the declared type and size and that its first bytes match
-        the image type, then makes it the profile photo (the previous photo is deleted). Emits
+        Copies the uploaded object to a server-owned public key, checks the copy's declared type,
+        size and image signature, then makes it the profile photo (the previous photo and the
+        upload slot are deleted; the upload URL can no longer change the photo). Emits
         `ProfileUpdated{hasPhoto=true}`. 404 for another account's upload; 422 `upload-expired`,
         `upload-missing` or `upload-mismatch`.
       responses:
@@ -130,7 +133,8 @@ paths:
       operationId: addPayoutAccount
       description: |
         HOST only. Stores a processor-issued account token (never raw bank or card data). New
-        accounts are `verified=false`; verification is set by Payment Service (phase 6). At most 3.
+        accounts are `verified=false` until Payment Service confirms with the processor that the
+        token belongs to this host (mechanism decided in phase 6). Unique per host. At most 3.
       requestBody:
         required: true
         content:
@@ -171,7 +175,7 @@ paths:
       operationId: addVehicle
       description: |
         The first vehicle becomes primary. Plates are normalized (upper case, spaces and hyphens
-        removed) and unique per region across all accounts (409 `plate-registered`). At most 10
+        removed) and unique per region among active vehicles (409 `plate-registered`). At most 10
         vehicles (422 `vehicle-limit`). Emits `VehicleAdded`.
       requestBody:
         required: true

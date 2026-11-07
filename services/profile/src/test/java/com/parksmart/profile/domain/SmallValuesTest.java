@@ -62,7 +62,8 @@ class SmallValuesTest {
     PhotoUpload upload =
         PhotoUpload.start(
             UUID.randomUUID(), account, PhotoContentType.PNG, 1000, T0, Duration.ofMinutes(10));
-    assertThat(upload.objectKey()).startsWith("profiles/" + account + "/");
+    assertThat(upload.objectKey()).startsWith("uploads/" + account + "/");
+    assertThat(upload.photoKey()).isEqualTo("profiles/" + account + "/photo-" + upload.id());
     upload.confirm(T0.plusSeconds(60));
     assertThatThrownBy(() -> upload.confirm(T0.plusSeconds(61)))
         .extracting("code")

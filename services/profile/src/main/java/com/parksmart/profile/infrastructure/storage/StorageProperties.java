@@ -45,6 +45,19 @@ public record StorageProperties(
     return endpoint == null || endpoint.isBlank() ? null : URI.create(endpoint);
   }
 
+  @Override
+  public String toString() {
+    return "StorageProperties[endpoint="
+        + endpoint
+        + ", bucket="
+        + bucket
+        + ", publicBaseUrl="
+        + publicBaseUrl
+        + ", staticCredentials="
+        + hasStaticCredentials()
+        + "]";
+  }
+
   boolean hasStaticCredentials() {
     return accessKey != null && !accessKey.isBlank();
   }

@@ -30,6 +30,10 @@ class PhotoUploadIT extends IntegrationTest {
         .single();
   }
 
+  private String photoKey(User user, JsonNode slot) {
+    return "profiles/" + user.id() + "/photo-" + slot.get("uploadId").asText();
+  }
+
   private String confirmPath(JsonNode slot) {
     return "/api/v1/profiles/me/photo/uploads/" + slot.get("uploadId").asText() + "/confirm";
   }
@@ -39,13 +43,17 @@ class PhotoUploadIT extends IntegrationTest {
     User user = driver();
     JsonNode slot = startUpload(user, "image/png", 2048);
     String key = objectKey(slot);
-    assertThat(key).startsWith("profiles/" + user.id() + "/");
+    assertThat(key).startsWith("uploads/" + user.id() + "/");
     storage.put(key, "image/png", FakePhotoStorage.png(2048));
 
     post(confirmPath(slot), user)
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.hasPhoto").value(true))
-        .andExpect(jsonPath("$.photoUrl").value("https://photos.parksmart.test/" + key));
+        .andExpect(
+            jsonPath("$.photoUrl").value("https://photos.parksmart.test/" + photoKey(user, slot)));
+    // The staging object is gone; the upload URL can no longer touch the public photo.
+    assertThat(storage.deleted()).contains(key);
+    assertThat(storage.exists(photoKey(user, slot))).isTrue();
 
     List<JsonNode> events = events("ProfileUpdated", "accountId", user.id());
     assertThat(events).hasSize(1);
@@ -61,8 +69,8 @@ class PhotoUploadIT extends IntegrationTest {
   void a_new_photo_replaces_and_deletes_the_old_object() throws Exception {
     User user = driver();
     JsonNode first = startUpload(user, "image/png", 100);
-    String firstKey = objectKey(first);
-    storage.put(firstKey, "image/png", FakePhotoStorage.png(100));
+    storage.put(objectKey(first), "image/png", FakePhotoStorage.png(100));
+    String firstKey = photoKey(user, first);
     post(confirmPath(first), user).andExpect(status().isOk());
 
     JsonNode second = startUpload(user, "image/png", 200);
@@ -70,7 +78,7 @@ class PhotoUploadIT extends IntegrationTest {
     post(confirmPath(second), user).andExpect(status().isOk());
 
     assertThat(storage.deleted()).contains(firstKey);
-    assertThat(storage.exists(objectKey(second))).isTrue();
+    assertThat(storage.exists(photoKey(user, second))).isTrue();
   }
 
   @Test
@@ -87,7 +95,7 @@ class PhotoUploadIT extends IntegrationTest {
     List<JsonNode> events = events("ProfileUpdated", "accountId", user.id());
     assertThat(events).hasSize(2);
     assertThat(events.get(1).get("payload").get("hasPhoto").asBoolean()).isFalse();
-    assertThat(storage.deleted()).contains(objectKey(slot));
+    assertThat(storage.deleted()).contains(photoKey(user, slot));
   }
 
   @Test
@@ -109,6 +117,8 @@ class PhotoUploadIT extends IntegrationTest {
         .andExpect(jsonPath("$.type").value("https://parksmart.dev/problems/upload-mismatch"));
 
     get("/api/v1/profiles/me", user).andExpect(jsonPath("$.hasPhoto").value(false));
+    // A rejected copy never lingers under the public key.
+    assertThat(storage.exists(photoKey(user, slot))).isFalse();
   }
 
   @Test

@@ -60,6 +60,11 @@ public class FakePhotoStorage implements PhotoStorage {
   }
 
   @Override
+  public void copy(String fromKey, String toKey) {
+    objects.put(toKey, objects.get(fromKey));
+  }
+
+  @Override
   public void delete(String objectKey) {
     objects.remove(objectKey);
     deleted.add(objectKey);

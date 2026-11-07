@@ -21,6 +21,9 @@ public interface PhotoStorage {
   /** The first {@code bytes} bytes of the object (fewer if it is shorter). */
   byte[] readHead(String objectKey, int bytes);
 
+  /** Server-side copy within the bucket (metadata included). */
+  void copy(String fromKey, String toKey);
+
   /** Deletes the object; missing objects are ignored. */
   void delete(String objectKey);
 
