@@ -1,0 +1,431 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart Profile Service
+  version: 1.0.0
+  description: |
+    Display profiles, profile photos, vehicles, payout accounts and notification preferences.
+    Owns `Profile`, `Vehicle`, `PayoutAccount`, `NotificationPreference`. Never stores or returns
+    credentials, email or phone (Identity owns those).
+
+    - A profile is created when `AccountRegistered` arrives, or lazily on the first `/profiles/me`
+      call if the event has not been processed yet.
+    - `GET /profiles/{accountId}` returns only the public shape (display name, photo, driver rating).
+    - Driver ratings are cached from `RatingAggregateUpdated` (Review Service computes them).
+    - Events: `ProfileUpdated` (display name or photo changed; `hasPhoto` feeds Listing's host
+      eligibility), `VehicleAdded`, `VehicleRemoved`, all on `profile.profile.v1`.
+    - Every `/me` endpoint acts on the caller (JWT `sub`). Vehicle and payout-account endpoints with
+      an ID return 403 when the resource belongs to someone else.
+servers:
+  - url: http://localhost:8080
+    description: Through the local gateway
+security:
+  - bearerAuth: []
+tags:
+  - name: profiles
+  - name: photos
+  - name: vehicles
+  - name: payout-accounts
+  - name: notification-preferences
+paths:
+  /api/v1/profiles/me:
+    get:
+      tags: [profiles]
+      operationId: getMyProfile
+      responses:
+        '200':
+          description: The caller's profile.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Profile' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+    put:
+      tags: [profiles]
+      operationId: updateMyProfile
+      description: Replaces the editable fields. Emits `ProfileUpdated` when the display name changes.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/UpdateProfileRequest' } }
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Profile' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+  /api/v1/profiles/{accountId}:
+    parameters: [{ $ref: '#/components/parameters/AccountId' }]
+    get:
+      tags: [profiles]
+      operationId: getPublicProfile
+      description: Public shape only. Any authenticated caller.
+      responses:
+        '200':
+          description: Public profile.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/PublicProfile' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+  /api/v1/profiles/me/photo/upload-urls:
+    post:
+      tags: [photos]
+      operationId: createProfilePhotoUploadUrl
+      description: |
+        Returns a presigned PUT URL (valid 10 min). The client uploads the bytes directly to object
+        storage, then calls `confirm`. jpeg/png/webp; <= 5 MB. At most 5 unconfirmed uploads per
+        account at a time (422 `too-many-pending-uploads`).
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/PhotoUploadRequest' } }
+      responses:
+        '201':
+          description: Upload slot created.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/PhotoUploadResponse' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+  /api/v1/profiles/me/photo/uploads/{uploadId}/confirm:
+    parameters: [{ $ref: '#/components/parameters/UploadId' }]
+    post:
+      tags: [photos]
+      operationId: confirmProfilePhotoUpload
+      description: |
+        Checks that the object exists with the declared type and size and that its first bytes match
+        the image type, then makes it the profile photo (the previous photo is deleted). Emits
+        `ProfileUpdated{hasPhoto=true}`. 404 for another account's upload; 422 `upload-expired`,
+        `upload-missing` or `upload-mismatch`.
+      responses:
+        '200':
+          description: Photo set.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Profile' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+  /api/v1/profiles/me/photo:
+    delete:
+      tags: [photos]
+      operationId: deleteProfilePhoto
+      description: Removes the photo. Emits `ProfileUpdated{hasPhoto=false}`. Idempotent.
+      responses:
+        '204': { description: Removed. }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+  /api/v1/profiles/me/payout-accounts:
+    get:
+      tags: [payout-accounts]
+      operationId: listPayoutAccounts
+      description: HOST only (403 otherwise).
+      responses:
+        '200':
+          description: The caller's payout accounts, newest first.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/PayoutAccountList' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [payout-accounts]
+      operationId: addPayoutAccount
+      description: |
+        HOST only. Stores a processor-issued account token (never raw bank or card data). New
+        accounts are `verified=false`; verification is set by Payment Service (phase 6). At most 3.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/AddPayoutAccountRequest' } }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/PayoutAccount' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+  /api/v1/profiles/me/payout-accounts/{payoutAccountId}:
+    parameters: [{ $ref: '#/components/parameters/PayoutAccountId' }]
+    delete:
+      tags: [payout-accounts]
+      operationId: deletePayoutAccount
+      description: HOST and owner only (403 otherwise).
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+  /api/v1/vehicles:
+    get:
+      tags: [vehicles]
+      operationId: listMyVehicles
+      responses:
+        '200':
+          description: The caller's vehicles (at most 10), primary first.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/VehicleList' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+    post:
+      tags: [vehicles]
+      operationId: addVehicle
+      description: |
+        The first vehicle becomes primary. Plates are normalized (upper case, spaces and hyphens
+        removed) and unique per region across all accounts (409 `plate-registered`). At most 10
+        vehicles (422 `vehicle-limit`). Emits `VehicleAdded`.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/AddVehicleRequest' } }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Vehicle' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+  /api/v1/vehicles/{vehicleId}:
+    parameters: [{ $ref: '#/components/parameters/VehicleId' }]
+    get:
+      tags: [vehicles]
+      operationId: getVehicle
+      description: Owner only (403 otherwise).
+      responses:
+        '200':
+          description: Vehicle.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Vehicle' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+    put:
+      tags: [vehicles]
+      operationId: updateVehicle
+      description: Owner only (403 otherwise). Plate and region cannot change; remove and re-add instead.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/UpdateVehicleRequest' } }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Vehicle' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+    delete:
+      tags: [vehicles]
+      operationId: removeVehicle
+      description: |
+        Owner only (403 otherwise). Soft delete. If it was primary, the oldest remaining vehicle
+        becomes primary. Emits `VehicleRemoved`.
+      responses:
+        '204': { description: Removed. }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+  /api/v1/vehicles/{vehicleId}/primary:
+    parameters: [{ $ref: '#/components/parameters/VehicleId' }]
+    post:
+      tags: [vehicles]
+      operationId: makeVehiclePrimary
+      description: Owner only (403 otherwise). Idempotent.
+      responses:
+        '200':
+          description: Now primary.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Vehicle' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+  /api/v1/notification-preferences:
+    get:
+      tags: [notification-preferences]
+      operationId: getNotificationPreferences
+      description: One entry per channel; channels never set are enabled.
+      responses:
+        '200':
+          description: Preferences.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/NotificationPreferences' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+    put:
+      tags: [notification-preferences]
+      operationId: updateNotificationPreferences
+      description: |
+        Sets the listed channels; channels not listed keep their value. IN_APP cannot be disabled
+        (422 `channel-required`): booking and payment notices always reach the in-app feed.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/NotificationPreferences' } }
+      responses:
+        '200':
+          description: All preferences after the update.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/NotificationPreferences' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+components:
+  securitySchemes:
+    bearerAuth: { $ref: 'common.yaml#/components/securitySchemes/bearerAuth' }
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UploadId:
+      name: uploadId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    VehicleId:
+      name: vehicleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PayoutAccountId:
+      name: payoutAccountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    Profile:
+      type: object
+      required: [accountId, hasPhoto, ratingCount, updatedAt]
+      properties:
+        accountId: { type: string, format: uuid }
+        displayName: { type: [string, 'null'] }
+        bio: { type: [string, 'null'] }
+        city: { type: [string, 'null'] }
+        photoUrl: { type: [string, 'null'], format: uri }
+        hasPhoto: { type: boolean }
+        ratingAvg: { type: [string, 'null'], pattern: '^\d(\.\d{1,2})?$', description: Driver rating 1.00–5.00, null until reviewed. }
+        ratingCount: { type: integer, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
+    PublicProfile:
+      type: object
+      required: [accountId, ratingCount]
+      properties:
+        accountId: { type: string, format: uuid }
+        displayName: { type: [string, 'null'] }
+        photoUrl: { type: [string, 'null'], format: uri }
+        ratingAvg: { type: [string, 'null'], pattern: '^\d(\.\d{1,2})?$' }
+        ratingCount: { type: integer, minimum: 0 }
+    UpdateProfileRequest:
+      type: object
+      required: [displayName]
+      additionalProperties: false
+      properties:
+        displayName: { type: string, minLength: 2, maxLength: 60, description: Trimmed; no control characters. }
+        bio: { type: [string, 'null'], maxLength: 500 }
+        city: { type: [string, 'null'], maxLength: 100 }
+    PhotoUploadRequest:
+      type: object
+      required: [contentType, contentLength]
+      additionalProperties: false
+      properties:
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        contentLength: { type: integer, minimum: 1, maximum: 5242880 }
+    PhotoUploadResponse:
+      type: object
+      required: [uploadId, uploadUrl, method, requiredHeaders, expiresAt]
+      properties:
+        uploadId: { type: string, format: uuid }
+        uploadUrl: { type: string, format: uri }
+        method: { type: string, const: PUT }
+        requiredHeaders:
+          type: object
+          additionalProperties: { type: string }
+          description: Headers the client must send with the PUT (Content-Type, Content-Length).
+        expiresAt: { type: string, format: date-time }
+    Vehicle:
+      type: object
+      required: [id, licensePlate, plateRegion, vehicleType, primary, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        licensePlate: { type: string }
+        plateRegion: { type: string }
+        vehicleType: { $ref: 'common.yaml#/components/schemas/VehicleType' }
+        make: { type: [string, 'null'] }
+        model: { type: [string, 'null'] }
+        color: { type: [string, 'null'] }
+        primary: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    VehicleList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Vehicle' } }
+    AddVehicleRequest:
+      type: object
+      required: [licensePlate, plateRegion, vehicleType]
+      additionalProperties: false
+      properties:
+        licensePlate: { type: string, minLength: 2, maxLength: 20, pattern: '^[A-Za-z0-9 -]+$' }
+        plateRegion: { type: string, pattern: '^[A-Z]{2}(-[A-Z0-9]{1,3})?$', examples: [IN-MH] }
+        vehicleType: { $ref: 'common.yaml#/components/schemas/VehicleType' }
+        make: { type: [string, 'null'], maxLength: 60 }
+        model: { type: [string, 'null'], maxLength: 60 }
+        color: { type: [string, 'null'], maxLength: 30 }
+    UpdateVehicleRequest:
+      type: object
+      required: [vehicleType]
+      additionalProperties: false
+      properties:
+        vehicleType: { $ref: 'common.yaml#/components/schemas/VehicleType' }
+        make: { type: [string, 'null'], maxLength: 60 }
+        model: { type: [string, 'null'], maxLength: 60 }
+        color: { type: [string, 'null'], maxLength: 30 }
+    PayoutAccount:
+      type: object
+      required: [id, processorType, tokenHint, verified, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        processorType: { $ref: '#/components/schemas/ProcessorType' }
+        tokenHint: { type: string, description: Last 4 characters of the token, e.g. "…a1b2". The token itself is never returned. }
+        verified: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    PayoutAccountList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, maxItems: 3, items: { $ref: '#/components/schemas/PayoutAccount' } }
+    AddPayoutAccountRequest:
+      type: object
+      required: [processorType, processorToken]
+      additionalProperties: false
+      properties:
+        processorType: { $ref: '#/components/schemas/ProcessorType' }
+        processorToken: { type: string, minLength: 6, maxLength: 255, pattern: '^[A-Za-z0-9_-]+$' }
+    ProcessorType:
+      type: string
+      enum: [STRIPE_CONNECT, RAZORPAY_ROUTE, FAKE]
+      description: FAKE is accepted only outside the aws profile.
+    NotificationChannel:
+      type: string
+      enum: [EMAIL, SMS, PUSH, IN_APP]
+    NotificationPreferences:
+      type: object
+      required: [preferences]
+      additionalProperties: false
+      properties:
+        preferences:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            type: object
+            required: [channel, enabled]
+            additionalProperties: false
+            properties:
+              channel: { $ref: '#/components/schemas/NotificationChannel' }
+              enabled: { type: boolean }
