@@ -1,0 +1,230 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart Booking Service
+  version: 1.0.0
+  description: |
+    Booking lifecycle and the no-double-booking invariant. Owns `Booking`, `BookingStatusHistory`.
+
+    **State machine**
+    - create -> PENDING_PAYMENT (slot held immediately)
+    - PENDING_PAYMENT -> (PaymentAuthorized) -> CONFIRMED if instantBook, else AWAITING_HOST_APPROVAL
+    - PENDING_PAYMENT -> (PaymentFailed, or 10 min timeout) -> EXPIRED
+    - AWAITING_HOST_APPROVAL -> (host approve) CONFIRMED | (host decline) DECLINED_BY_HOST
+      | (no answer by min(requestedAt + 24h, start)) EXPIRED
+    - CONFIRMED -> (driver check-in, from start - 15 min) CHECKED_IN
+      | (no check-in by start + 30 min) NO_SHOW
+      | (cancel) CANCELLED_BY_DRIVER / CANCELLED_BY_HOST
+    - AWAITING_HOST_APPROVAL -> (driver cancel) CANCELLED_BY_DRIVER (100% refund / void)
+    - CHECKED_IN -> (check-out, or end time reached) COMPLETED
+
+    **No double booking**: Postgres exclusion constraint on `(listing_id, blocked_range)` for
+    statuses PENDING_PAYMENT, AWAITING_HOST_APPROVAL, CONFIRMED, CHECKED_IN, where
+    `blocked_range = [start, end + bufferMinutes)`. Overlap returns 409 `booking-overlap`.
+
+    **Rules**: start/end on 15-minute boundaries; start >= now + 15 min; duration 30 min .. 30 days;
+    total = pricePerHour x hours (HALF_UP, 2 dp). Price, cancellation policy, buffer, instantBook,
+    and hostAccountId are snapshotted from Listing at creation.
+
+    **Idempotency**: `Idempotency-Key` is required on create. Same key + same body by the same
+    driver returns the original booking (200). Same key with a different body returns 422
+    `idempotency-key-reused`.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - name: bookings
+paths:
+  /api/v1/bookings:
+    post:
+      tags: [bookings]
+      operationId: createBooking
+      description: DRIVER only. Holds the slot and starts the payment saga (BookingRequested).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 100, pattern: '^[A-Za-z0-9_-]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateBookingRequest' } }
+      responses:
+        '202':
+          description: Booking created in PENDING_PAYMENT. Next, the driver pays via Payment Service.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } }
+        '200':
+          description: Replay of an earlier request with the same Idempotency-Key.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+    get:
+      tags: [bookings]
+      operationId: listBookings
+      description: Bookings where the caller is the driver (`role=driver`) or the host (`role=host`). Ordered by start time.
+      parameters:
+        - name: role
+          in: query
+          required: true
+          schema: { type: string, enum: [driver, host] }
+        - name: when
+          in: query
+          required: false
+          schema: { type: string, enum: [upcoming, past, all], default: all }
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/BookingStatus' }
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+      responses:
+        '200': { description: Page., content: { application/json: { schema: { $ref: '#/components/schemas/BookingPage' } } } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+  /api/v1/bookings/{bookingId}:
+    parameters: [{ $ref: '#/components/parameters/BookingId' }]
+    get:
+      tags: [bookings]
+      operationId: getBooking
+      description: Visible to the booking's driver, its host, and ADMIN (404 for everyone else).
+      responses:
+        '200': { description: Booking., content: { application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } } } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+  /api/v1/bookings/{bookingId}/cancel:
+    parameters: [{ $ref: '#/components/parameters/BookingId' }]
+    post:
+      tags: [bookings]
+      operationId: cancelBooking
+      description: |
+        Driver (-> CANCELLED_BY_DRIVER, refund per policy snapshot) or host (-> CANCELLED_BY_HOST,
+        100% refund) of the booking. Allowed from AWAITING_HOST_APPROVAL (driver only) and CONFIRMED.
+        Emits BookingCancelled with the computed refund amount.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CancelBookingRequest' } }
+      responses:
+        '200': { description: Cancelled., content: { application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } } } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+  /api/v1/bookings/{bookingId}/approve:
+    parameters: [{ $ref: '#/components/parameters/BookingId' }]
+    post:
+      tags: [bookings]
+      operationId: approveBooking
+      description: Host of the booking only. AWAITING_HOST_APPROVAL -> CONFIRMED.
+      responses:
+        '200': { description: Confirmed., content: { application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } } } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+  /api/v1/bookings/{bookingId}/decline:
+    parameters: [{ $ref: '#/components/parameters/BookingId' }]
+    post:
+      tags: [bookings]
+      operationId: declineBooking
+      description: Host of the booking only. AWAITING_HOST_APPROVAL -> DECLINED_BY_HOST; the payment authorization is voided.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CancelBookingRequest' } }
+      responses:
+        '200': { description: Declined., content: { application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } } } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+  /api/v1/bookings/{bookingId}/check-in:
+    parameters: [{ $ref: '#/components/parameters/BookingId' }]
+    post:
+      tags: [bookings]
+      operationId: checkIn
+      description: Driver only. CONFIRMED -> CHECKED_IN, allowed from start - 15 min until start + 30 min.
+      responses:
+        '200': { description: Checked in., content: { application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } } } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+  /api/v1/bookings/{bookingId}/check-out:
+    parameters: [{ $ref: '#/components/parameters/BookingId' }]
+    post:
+      tags: [bookings]
+      operationId: checkOut
+      description: Driver only. CHECKED_IN -> COMPLETED (no refund for unused time).
+      responses:
+        '200': { description: Completed., content: { application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } } } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearerAuth: { $ref: 'common.yaml#/components/securitySchemes/bearerAuth' }
+  parameters:
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    BookingStatus:
+      type: string
+      enum: [PENDING_PAYMENT, AWAITING_HOST_APPROVAL, CONFIRMED, CHECKED_IN, COMPLETED, CANCELLED_BY_DRIVER, CANCELLED_BY_HOST, DECLINED_BY_HOST, NO_SHOW, EXPIRED]
+    CreateBookingRequest:
+      type: object
+      required: [listingId, startTime, endTime]
+      additionalProperties: false
+      properties:
+        listingId: { type: string, format: uuid }
+        vehicleId: { type: [string, 'null'], format: uuid, description: Optional; vehicle type is validated against the listing in a later phase. }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+    CancelBookingRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 255 }
+    BookingResponse:
+      type: object
+      required: [id, listingId, driverAccountId, hostAccountId, status, startTime, endTime, pricePerHour, totalAmount, currency, instantBook, cancellationPolicy, bufferMinutes, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        listingId: { type: string, format: uuid }
+        driverAccountId: { type: string, format: uuid }
+        hostAccountId: { type: string, format: uuid }
+        vehicleId: { type: [string, 'null'], format: uuid }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        pricePerHour: { $ref: 'common.yaml#/components/schemas/Money' }
+        totalAmount: { $ref: 'common.yaml#/components/schemas/Money' }
+        currency: { $ref: 'common.yaml#/components/schemas/Currency' }
+        instantBook: { type: boolean }
+        cancellationPolicy: { $ref: 'common.yaml#/components/schemas/CancellationPolicy' }
+        bufferMinutes: { type: integer }
+        paymentDueBy: { type: [string, 'null'], format: date-time, description: Set while PENDING_PAYMENT. }
+        hostDecisionDueBy: { type: [string, 'null'], format: date-time, description: Set while AWAITING_HOST_APPROVAL. }
+        refundAmount: { oneOf: [{ $ref: 'common.yaml#/components/schemas/Money' }, { type: 'null' }], description: Set after a cancellation or decline. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BookingPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/BookingResponse' } }
+        nextCursor: { type: [string, 'null'] }

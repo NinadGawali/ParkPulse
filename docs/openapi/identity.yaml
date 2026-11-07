@@ -1,0 +1,285 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart Identity Service
+  version: 1.0.0
+  description: |
+    Credentials, tokens, roles, and email/phone verification. Owns `Account`, `Role`,
+    `RefreshToken`, `VerificationToken`. Never exposes profile data (Profile Service owns it).
+
+    Tokens: access token = RS256 JWT, 15 min. Refresh token = opaque random string, 30 days,
+    stored hashed, rotated on every use; reuse of a rotated token revokes the whole chain.
+    New accounts get role DRIVER. HOST is self-service via `POST /accounts/me/roles/host`.
+    Rate limits (gateway + Redis): login 5/15 min per account+IP; register, forgot-password and
+    verification requests 5/hour per IP.
+servers:
+  - url: http://localhost:8080
+    description: Through the local gateway
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+  - name: accounts
+  - name: keys
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/RegisterRequest' } }
+      responses:
+        '201':
+          description: Account created in PENDING_VERIFICATION; an email verification code is issued.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/AccountSummary' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } }
+      responses:
+        '200':
+          description: Tokens issued. Accounts in PENDING_VERIFICATION may log in (to verify), SUSPENDED/DELETED may not.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/TokenResponse' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/RefreshRequest' } }
+      responses:
+        '200':
+          description: New access + refresh token; the presented refresh token is revoked.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/TokenResponse' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/RefreshRequest' } }
+      responses:
+        '204': { description: Refresh token revoked (idempotent). }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+  /api/v1/auth/email/verification-requests:
+    post:
+      tags: [auth]
+      operationId: requestEmailVerification
+      description: Re-issue an email verification code for the caller's account.
+      responses:
+        '202': { description: Code issued (previous unconsumed codes are invalidated). }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+  /api/v1/auth/email/verify:
+    post:
+      tags: [auth]
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/VerifyCodeRequest' } }
+      responses:
+        '204': { description: Email verified; account becomes ACTIVE. }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+  /api/v1/auth/phone/verification-requests:
+    post:
+      tags: [auth]
+      operationId: requestPhoneVerification
+      description: Set (or change) the caller's phone and send a 6-digit code by SMS.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/PhoneVerificationRequest' } }
+      responses:
+        '202': { description: Code issued. }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+  /api/v1/auth/phone/verify:
+    post:
+      tags: [auth]
+      operationId: verifyPhone
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/VerifyCodeRequest' } }
+      responses:
+        '204': { description: Phone verified; emits PhoneVerified. }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+  /api/v1/auth/password/forgot:
+    post:
+      tags: [auth]
+      operationId: forgotPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/ForgotPasswordRequest' } }
+      responses:
+        '202': { description: 'Always 202, whether or not the email exists (no account enumeration).' }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+  /api/v1/auth/password/reset:
+    post:
+      tags: [auth]
+      operationId: resetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/ResetPasswordRequest' } }
+      responses:
+        '204': { description: Password changed; all refresh tokens for the account are revoked. }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+  /api/v1/accounts/me:
+    get:
+      tags: [accounts]
+      operationId: getMyAccount
+      responses:
+        '200':
+          description: The caller's account.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/AccountSummary' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+  /api/v1/accounts/me/roles/host:
+    post:
+      tags: [accounts]
+      operationId: becomeHost
+      description: Grant HOST to the caller. Requires status ACTIVE. Idempotent. Refresh tokens to get the new role in the JWT.
+      responses:
+        '200':
+          description: Account now holds HOST.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/AccountSummary' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+  /.well-known/jwks.json:
+    get:
+      tags: [keys]
+      operationId: getJwks
+      security: []
+      responses:
+        '200':
+          description: Public signing keys (RFC 7517) used by every other service to verify access tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties:
+                  keys:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+components:
+  securitySchemes:
+    bearerAuth: { $ref: 'common.yaml#/components/securitySchemes/bearerAuth' }
+  schemas:
+    Role:
+      type: string
+      enum: [DRIVER, HOST, ADMIN]
+    AccountStatus:
+      type: string
+      enum: [PENDING_VERIFICATION, ACTIVE, SUSPENDED, DELETED]
+    RegisterRequest:
+      type: object
+      required: [email, password, acceptedTermsVersion]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+          description: At least 10 chars with a letter and a digit.
+        acceptedTermsVersion: { type: string, minLength: 1, maxLength: 20 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+        password: { type: string, minLength: 1, maxLength: 128 }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      additionalProperties: false
+      properties:
+        refreshToken: { type: string, minLength: 20, maxLength: 512 }
+    TokenResponse:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, const: Bearer }
+        expiresIn: { type: integer, description: Access token lifetime in seconds. }
+    VerifyCodeRequest:
+      type: object
+      required: [code]
+      additionalProperties: false
+      properties:
+        code: { type: string, pattern: '^\d{6}$' }
+    PhoneVerificationRequest:
+      type: object
+      required: [phone]
+      additionalProperties: false
+      properties:
+        phone: { type: string, pattern: '^\+[1-9]\d{7,14}$', description: E.164 }
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+    ResetPasswordRequest:
+      type: object
+      required: [token, newPassword]
+      additionalProperties: false
+      properties:
+        token: { type: string, minLength: 20, maxLength: 512 }
+        newPassword: { type: string, minLength: 10, maxLength: 128 }
+    AccountSummary:
+      type: object
+      required: [id, email, emailVerified, phoneVerified, status, roles, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        phone: { type: [string, 'null'], description: 'E.164, only shown to the account owner.' }
+        emailVerified: { type: boolean }
+        phoneVerified: { type: boolean }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/Role' }
+        createdAt: { type: string, format: date-time }

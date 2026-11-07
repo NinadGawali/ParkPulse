@@ -1,0 +1,176 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart Payment Service
+  version: 1.0.0
+  description: |
+    Money movement. Owns `PaymentIntent`, `LedgerEntry`, `Payout`, `CommissionRule`.
+    Card/bank data never touches ParkSmart: the client gets a processor payment-method token and
+    Payment Service talks to the processor through the `PaymentProcessor` interface
+    (`FakeProcessor` now; Razorpay/Stripe adapter later).
+
+    **Saga (driven by events, not called by Booking)**
+    - BookingRequested -> create PaymentIntent (CREATED) for the booking total
+    - driver calls `authorize` -> AUTHORIZED (emit PaymentAuthorized) or FAILED (emit PaymentFailed)
+    - BookingConfirmed -> capture -> CAPTURED (emit PaymentCaptured); ledger: driver DEBIT total,
+      host CREDIT total - commission, platform CREDIT commission (rate from `commission_rules`
+      effective at capture time; seed 15%)
+    - BookingDeclined / BookingExpired / BookingCancelled before capture -> void -> VOIDED (PaymentVoided)
+    - BookingCancelled after capture -> refund `refundAmount` from the event -> REFUNDED or
+      PARTIALLY_REFUNDED (PaymentRefunded) with reversing ledger entries
+    - Weekly payout job sums each host's unpaid CREDIT entries -> Payout (PayoutCompleted/PayoutFailed)
+
+    **FakeProcessor tokens**: `fake_ok` authorizes, `fake_decline` fails with `card_declined`.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - name: payments
+  - name: payouts
+  - name: admin
+paths:
+  /api/v1/payments/intents:
+    get:
+      tags: [payments]
+      operationId: getIntentForBooking
+      description: Driver of the booking only. The intent is created asynchronously after booking creation; 404 until it exists (client polls).
+      parameters:
+        - name: bookingId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Intent., content: { application/json: { schema: { $ref: '#/components/schemas/PaymentIntentResponse' } } } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+  /api/v1/payments/intents/{intentId}/authorize:
+    parameters: [{ $ref: '#/components/parameters/IntentId' }]
+    post:
+      tags: [payments]
+      operationId: authorizeIntent
+      description: Driver of the booking only. CREATED -> AUTHORIZED | FAILED. Idempotent per intent (a second call returns the current state).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 100, pattern: '^[A-Za-z0-9_-]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/AuthorizeRequest' } }
+      responses:
+        '200': { description: Result (check `status`)., content: { application/json: { schema: { $ref: '#/components/schemas/PaymentIntentResponse' } } } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+  /api/v1/hosts/me/payouts:
+    get:
+      tags: [payouts]
+      operationId: listMyPayouts
+      description: HOST only. The caller's payouts, newest first.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+      responses:
+        '200': { description: Page., content: { application/json: { schema: { $ref: '#/components/schemas/PayoutPage' } } } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+  /api/v1/hosts/me/earnings-summary:
+    get:
+      tags: [payouts]
+      operationId: getMyEarningsSummary
+      description: HOST only. Totals from the ledger.
+      responses:
+        '200': { description: Summary., content: { application/json: { schema: { $ref: '#/components/schemas/EarningsSummary' } } } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+  /admin/v1/payments/intents/{intentId}/refunds:
+    parameters: [{ $ref: '#/components/parameters/IntentId' }]
+    post:
+      tags: [admin]
+      operationId: adminRefund
+      description: ADMIN only. Manual (dispute) refund of a CAPTURED intent, up to the remaining captured amount.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 100, pattern: '^[A-Za-z0-9_-]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/RefundRequest' } }
+      responses:
+        '200': { description: Refunded., content: { application/json: { schema: { $ref: '#/components/schemas/PaymentIntentResponse' } } } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+components:
+  securitySchemes:
+    bearerAuth: { $ref: 'common.yaml#/components/securitySchemes/bearerAuth' }
+  parameters:
+    IntentId:
+      name: intentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    PaymentStatus:
+      type: string
+      enum: [CREATED, AUTHORIZED, CAPTURED, FAILED, VOIDED, REFUNDED, PARTIALLY_REFUNDED]
+    AuthorizeRequest:
+      type: object
+      required: [paymentMethodToken]
+      additionalProperties: false
+      properties:
+        paymentMethodToken: { type: string, minLength: 3, maxLength: 255, description: Processor token from the client SDK (FakeProcessor - fake_ok / fake_decline). }
+    RefundRequest:
+      type: object
+      required: [amount, reason]
+      additionalProperties: false
+      properties:
+        amount: { $ref: 'common.yaml#/components/schemas/Money' }
+        reason: { type: string, minLength: 1, maxLength: 255 }
+    PaymentIntentResponse:
+      type: object
+      required: [id, bookingId, amount, currency, status, refundedAmount, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        bookingId: { type: string, format: uuid }
+        amount: { $ref: 'common.yaml#/components/schemas/Money' }
+        currency: { $ref: 'common.yaml#/components/schemas/Currency' }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        failureCode: { type: [string, 'null'] }
+        refundedAmount: { $ref: 'common.yaml#/components/schemas/Money' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Payout:
+      type: object
+      required: [id, amount, currency, periodStart, periodEnd, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        amount: { $ref: 'common.yaml#/components/schemas/Money' }
+        currency: { $ref: 'common.yaml#/components/schemas/Currency' }
+        periodStart: { type: string, format: date }
+        periodEnd: { type: string, format: date }
+        status: { type: string, enum: [PENDING, PAID, FAILED, ON_HOLD] }
+        createdAt: { type: string, format: date-time }
+    PayoutPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Payout' } }
+        nextCursor: { type: [string, 'null'] }
+    EarningsSummary:
+      type: object
+      required: [currency, totalEarned, totalPaidOut, pendingPayout]
+      properties:
+        currency: { $ref: 'common.yaml#/components/schemas/Currency' }
+        totalEarned: { $ref: 'common.yaml#/components/schemas/Money' }
+        totalPaidOut: { $ref: 'common.yaml#/components/schemas/Money' }
+        pendingPayout: { $ref: 'common.yaml#/components/schemas/Money' }
