@@ -1,0 +1,26 @@
+# Local development: services on localhost ports, Redis from infra/docker-compose.yml.
+spring:
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../../.env[.properties]
+  data:
+    redis:
+      host: localhost
+
+IDENTITY_URI: http://localhost:8081
+PROFILE_URI: http://localhost:8082
+LISTING_URI: http://localhost:8083
+BOOKING_URI: http://localhost:8084
+PAYMENT_URI: http://localhost:8085
+SEARCH_URI: http://localhost:8086
+IDENTITY_ISSUER: https://identity.parksmart.local
+
+logging:
+  structured:
+    format:
+      console: ""
+
+parksmart:
+  gateway:
+    allowed-origins: http://localhost:3000,http://localhost:5173

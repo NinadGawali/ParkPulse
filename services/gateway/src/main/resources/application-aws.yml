@@ -1,0 +1,13 @@
+# AWS: behind the ALB. Env: IDENTITY_URI, PROFILE_URI, LISTING_URI, BOOKING_URI, PAYMENT_URI,
+# SEARCH_URI (internal service discovery names), IDENTITY_ISSUER, REDIS_HOST, REDIS_PASSWORD
+# (ElastiCache auth token), GATEWAY_ALLOWED_ORIGINS.
+spring:
+  data:
+    redis:
+      ssl:
+        enabled: true
+
+parksmart:
+  gateway:
+    # The ALB appends the real client IP; only trusted because nothing else can reach the gateway.
+    trust-forwarded-for: true

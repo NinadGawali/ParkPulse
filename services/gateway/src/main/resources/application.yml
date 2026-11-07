@@ -1,0 +1,144 @@
+# API Gateway. Upstream URIs, Redis and JWT settings come from the environment.
+# Rate limits use Redis token buckets: replenish-rate tokens/s, burst-capacity max tokens,
+# requested-tokens cost per request. "5 per 15 min" = cost 180, refill 1/s, burst 900.
+spring:
+  application:
+    name: gateway-service
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: ${REDIS_SSL:false}
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 15s
+          default-filters:
+            - SecureHeaders
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+            - RemoveRequestHeader=Cookie
+          routes:
+            # --- Identity: abuse-prone endpoints first, with strict per-IP limits ---
+            - id: identity-login
+              uri: ${IDENTITY_URI}
+              order: -10
+              predicates:
+                - Path=/api/v1/auth/login
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@ipKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 900
+                    redis-rate-limiter.requestedTokens: 180
+            - id: identity-signup-and-codes
+              uri: ${IDENTITY_URI}
+              order: -10
+              predicates:
+                - Path=/api/v1/auth/register,/api/v1/auth/password/forgot,/api/v1/auth/password/reset,/api/v1/auth/email/verification-requests,/api/v1/auth/phone/verification-requests
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@ipKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 3600
+                    redis-rate-limiter.requestedTokens: 720
+            - id: identity-verify
+              uri: ${IDENTITY_URI}
+              order: -10
+              predicates:
+                - Path=/api/v1/auth/email/verify,/api/v1/auth/phone/verify
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@principalOrIpKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 900
+                    redis-rate-limiter.requestedTokens: 90
+            - id: identity
+              uri: ${IDENTITY_URI}
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/accounts/**,/.well-known/jwks.json
+              filters: &standard-limit
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@principalOrIpKeyResolver}"
+                    redis-rate-limiter.replenishRate: 20
+                    redis-rate-limiter.burstCapacity: 40
+                    redis-rate-limiter.requestedTokens: 1
+
+            # --- Booking: creation limited per account (20 per minute) ---
+            - id: booking-create
+              uri: ${BOOKING_URI}
+              order: -10
+              predicates:
+                - Path=/api/v1/bookings
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@principalOrIpKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 60
+                    redis-rate-limiter.requestedTokens: 3
+            - id: booking
+              uri: ${BOOKING_URI}
+              predicates:
+                - Path=/api/v1/bookings,/api/v1/bookings/**
+              filters: *standard-limit
+
+            # --- Other services (built in later phases) ---
+            - id: profile
+              uri: ${PROFILE_URI}
+              predicates:
+                - Path=/api/v1/profiles/**,/api/v1/vehicles/**,/api/v1/notification-preferences/**
+              filters: *standard-limit
+            - id: listing
+              uri: ${LISTING_URI}
+              predicates:
+                - Path=/api/v1/listings,/api/v1/listings/**,/api/v1/hosts/me/listings,/admin/v1/listings,/admin/v1/listings/**
+              filters: *standard-limit
+            - id: payment
+              uri: ${PAYMENT_URI}
+              predicates:
+                - Path=/api/v1/payments/**,/api/v1/hosts/me/payouts,/api/v1/hosts/me/earnings-summary,/admin/v1/payments/**
+              filters: *standard-limit
+            - id: search
+              uri: ${SEARCH_URI}
+              predicates:
+                - Path=/api/v1/search/**
+              filters: *standard-limit
+
+server:
+  port: ${GATEWAY_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+parksmart:
+  gateway:
+    jwt:
+      issuer: ${IDENTITY_ISSUER}
+      audience: parksmart-api
+      jwks-uri: ${IDENTITY_URI}/.well-known/jwks.json
+    allowed-origins: ${GATEWAY_ALLOWED_ORIGINS:}
+    trust-forwarded-for: false

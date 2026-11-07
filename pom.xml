@@ -24,6 +24,7 @@
     <module>shared/common-security</module>
     <module>tools/contract-validation</module>
     <module>services/identity</module>
+    <module>services/gateway</module>
     <!-- services/<name> modules are added by /new-service -->
   </modules>
 
