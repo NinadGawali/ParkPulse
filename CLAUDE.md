@@ -54,7 +54,7 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 | `services/listing` (:8083) | Listings, photos, availability, moderation, host-eligibility and active-booking projections, booking quote | done |
 | `services/booking` (:8084) | Booking state machine, exclusion constraint, idempotent create, saga + timers (JdbcClient, no JPA) | done |
 | `services/payment` (:8085) | Intents (event-driven saga), FakeProcessor, double-entry ledger, commission rules, weekly payouts, admin refunds (JdbcClient) | done |
-| `services/search` | Event-built geo search projection | planned (phase 7) |
+| `services/search` (:8086) | Event-built geo search projection, PostGIS behind `ListingSearchIndex` (JdbcClient) | done |
 | `services/notification` | Email/in-app delivery, templates | planned (phase 8) |
 | `services/review` | Reviews, eligibility projection, aggregates | planned (phase 9) |
 | `services/admin-bff` | Composed admin views, no entities | planned (phase 10) |

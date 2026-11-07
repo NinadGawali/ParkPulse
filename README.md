@@ -2,7 +2,7 @@
 
 A parking marketplace (Airbnb-for-parking): hosts list private parking spaces; drivers search, book, pay, park, and review. Built as Spring Boot microservices in a Maven monorepo. (Repository name: ParkPulse.)
 
-**Status:** Phases 0–6 done (bootstrap, contracts, Gateway + Identity, Profile, Listing, Booking, Payment). See [docs/PROGRESS.md](docs/PROGRESS.md).
+**Status:** Phases 0–7 done (bootstrap, contracts, Gateway + Identity, Profile, Listing, Booking, Payment, Search). See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Design docs
 - [Services & Entities](docs/ParkSmart-Services-and-Entities.md): authoritative service boundaries, entities, schema
@@ -52,12 +52,13 @@ java -jar services/<name>/target/<name>-service-0.1.0-SNAPSHOT.jar --spring.prof
 |---|---|---|
 | gateway | 8080 | Single entry point: routing, edge JWT check, Redis rate limits, correlation IDs; blocks `/internal/**` |
 | identity | 8081 | Accounts, login, refresh-token rotation, email/phone verification, roles, JWKS. Locally, verification codes are logged ("DEV ONLY") until Notification exists |
+| search | 8086 | Public geo search (radius, price, vehicle size, amenities, instant book, optional time window with weekly rules, blackouts and known bookings) over a projection built only from Listing, Booking, Payment and Review events |
 | payment | 8085 | Payment intents created from BookingRequested; driver authorizes with a processor token (FakeProcessor: `fake_ok`, `fake_decline`, `fake_capture_fail`); capture on confirmation, void on expiry/decline, policy refunds on cancellation; double-entry ledger with 15% commission; weekly host payouts and earnings |
 | booking | 8084 | Bookings: idempotent create (holds the slot; a Postgres exclusion constraint makes overlaps impossible), the payment saga (PaymentAuthorized → CONFIRMED or host approval), cancellations with policy refunds, check-in/out, and timers for payment expiry, host deadline, no-show and completion |
 | listing | 8083 | Listings (DRAFT → review → PUBLISHED ↔ PAUSED, ARCHIVED), photos, weekly availability and blackouts, admin moderation, and the internal booking quote. Tracks host eligibility (verified phone, profile photo, suspension) and active bookings from events |
 | profile | 8082 | Profiles and presigned photo uploads, vehicles, host payout accounts, notification preferences. Consumes `AccountRegistered` and driver ratings; publishes `ProfileUpdated`, `VehicleAdded`, `VehicleRemoved` |
 
-Contracts: [identity](docs/openapi/identity.yaml), [profile](docs/openapi/profile.yaml), [listing](docs/openapi/listing.yaml), [booking](docs/openapi/booking.yaml), [payment](docs/openapi/payment.yaml).
+Contracts: [identity](docs/openapi/identity.yaml), [profile](docs/openapi/profile.yaml), [search](docs/openapi/search.yaml), [listing](docs/openapi/listing.yaml), [booking](docs/openapi/booking.yaml), [payment](docs/openapi/payment.yaml).
 
 ### Profile photo upload (through the gateway)
 1. `POST /api/v1/profiles/me/photo/upload-urls {"contentType":"image/png","contentLength":12345}` returns `uploadId`, a presigned `uploadUrl` (10 min) and `requiredHeaders`.
