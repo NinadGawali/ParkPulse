@@ -23,6 +23,7 @@
     <module>shared/common-web</module>
     <module>shared/common-security</module>
     <module>tools/contract-validation</module>
+    <module>services/identity</module>
     <!-- services/<name> modules are added by /new-service -->
   </modules>
 
@@ -34,6 +35,10 @@
     <spotless.version>3.11.0</spotless.version>
     <victools-jsonschema.version>4.38.0</victools-jsonschema.version>
     <swagger-parser.version>2.1.48</swagger-parser.version>
+    <archunit.version>1.5.1</archunit.version>
+    <!-- Test JVMs (surefire + failsafe) run in UTC regardless of the host time zone. -->
+    <argLine>-Duser.timezone=UTC</argLine>
+    <bouncycastle.version>1.86</bouncycastle.version>
   </properties>
 
   <dependencyManagement>
@@ -60,11 +65,35 @@
         <artifactId>common-security</artifactId>
         <version>${project.version}</version>
       </dependency>
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>${archunit.version}</version>
+      </dependency>
+      <dependency>
+        <!-- Required by Spring Security's Argon2PasswordEncoder. -->
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
   <build>
     <plugins>
+      <plugin>
+        <!-- *Test = unit tests (surefire, test phase); *IT = integration tests (failsafe, verify). -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
