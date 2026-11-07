@@ -4,9 +4,27 @@
 # later are appended. Never prints any value.
 set -euo pipefail
 
+#
+# Usage: init-local-env.sh               create/top up
+#        init-local-env.sh set KEY VALUE  change one non-secret key (e.g. a port)
+
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 example="$root/.env.example"
 target="$root/.env"
+
+if [[ "${1:-}" == "set" ]]; then
+  key="${2:?key required}"
+  value="${3:?value required}"
+  [[ "$key" =~ ^[A-Z0-9_]+_PORT$ ]] || { echo "init-local-env: only *_PORT keys can be set this way"; exit 1; }
+  [[ -f "$target" ]] || { echo "init-local-env: run without arguments first"; exit 1; }
+  if grep -q "^${key}=" "$target"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$target"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$target"
+  fi
+  echo "init-local-env: set $key=$value"
+  exit 0
+fi
 
 rand() { od -An -N16 -tx1 /dev/urandom | tr -d ' \n'; }
 
