@@ -30,7 +30,15 @@ info:
     - Weekly payout job sums each host's unpaid CREDIT entries -> Payout (PayoutCompleted/PayoutFailed)
     - Events are consumed idempotently (processed_events), in bookingId order (Kafka key).
 
-    **FakeProcessor tokens**: `fake_ok` authorizes, `fake_decline` fails with `card_declined`.
+    **FakeProcessor tokens**: `fake_ok` authorizes, `fake_decline` fails with `card_declined`,
+    `fake_capture_fail` authorizes but the capture is rejected (`capture_rejected`). The fake
+    processor is refused on aws.
+
+    **Trust**: booking events are only applied when their driver, host (and amount, where carried)
+    match the intent; anything else is logged and ignored. All money operations lock the intent row.
+
+    **Payout destination**: the fake processor pays any host. A real adapter needs the host's
+    verified payout account from Profile Service (internal call with service credentials, phase 11).
 servers:
   - url: http://localhost:8080
 security:
@@ -44,7 +52,7 @@ paths:
     get:
       tags: [payments]
       operationId: getIntentForBooking
-      description: Driver of the booking only. The intent is created asynchronously after booking creation; 404 until it exists (client polls).
+      description: Driver of the booking (or ADMIN) only; 403 for anyone else. The intent is created asynchronously after booking creation; 404 until it exists (client polls).
       parameters:
         - name: bookingId
           in: query
@@ -109,7 +117,10 @@ paths:
     post:
       tags: [admin]
       operationId: adminRefund
-      description: ADMIN only. Manual (dispute) refund of a CAPTURED intent, up to the remaining captured amount.
+      description: |
+        ADMIN only. Manual (dispute) refund of a CAPTURED / PARTIALLY_REFUNDED intent, up to the
+        remaining captured amount (422 `refund-exceeds-captured`; 409 `illegal-payment-transition`
+        for other states). Same Idempotency-Key + same body returns the stored result.
       parameters:
         - name: Idempotency-Key
           in: header
