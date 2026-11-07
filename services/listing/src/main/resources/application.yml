@@ -1,4 +1,4 @@
-# Profile Service. Every host, credential and secret comes from the environment (12-factor);
+# Listing Service. Every host, credential and secret comes from the environment (12-factor);
 # missing values fail startup instead of falling back to defaults.
 spring:
   application:
