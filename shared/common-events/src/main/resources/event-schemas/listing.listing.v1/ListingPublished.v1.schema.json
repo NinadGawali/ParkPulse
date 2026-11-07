@@ -1,0 +1,115 @@
+{
+  "type" : "object",
+  "properties" : {
+    "listing" : {
+      "type" : "object",
+      "properties" : {
+        "address" : {
+          "type" : "string"
+        },
+        "amenities" : {
+          "type" : "array",
+          "items" : {
+            "type" : "string"
+          }
+        },
+        "availabilityRules" : {
+          "type" : "array",
+          "items" : {
+            "type" : "object",
+            "properties" : {
+              "dayOfWeek" : {
+                "type" : "string"
+              },
+              "endTime" : {
+                "type" : "string"
+              },
+              "startTime" : {
+                "type" : "string"
+              }
+            },
+            "required" : [ "dayOfWeek", "endTime", "startTime" ],
+            "additionalProperties" : false
+          }
+        },
+        "blackouts" : {
+          "type" : "array",
+          "items" : {
+            "type" : "object",
+            "properties" : {
+              "blackoutId" : {
+                "type" : "string",
+                "format" : "uuid"
+              },
+              "end" : {
+                "type" : "string",
+                "format" : "date-time"
+              },
+              "start" : {
+                "type" : "string",
+                "format" : "date-time"
+              }
+            },
+            "required" : [ "blackoutId", "end", "start" ],
+            "additionalProperties" : false
+          }
+        },
+        "bufferMinutes" : {
+          "type" : "integer"
+        },
+        "cancellationPolicy" : {
+          "type" : "string"
+        },
+        "currency" : {
+          "type" : "string"
+        },
+        "hostAccountId" : {
+          "type" : "string",
+          "format" : "uuid"
+        },
+        "instantBook" : {
+          "type" : "boolean"
+        },
+        "latitude" : {
+          "type" : "number"
+        },
+        "listingId" : {
+          "type" : "string",
+          "format" : "uuid"
+        },
+        "longitude" : {
+          "type" : "number"
+        },
+        "maxVehicleType" : {
+          "type" : "string"
+        },
+        "pricePerHour" : {
+          "type" : "string"
+        },
+        "status" : {
+          "type" : "string"
+        },
+        "thumbnailUrl" : {
+          "type" : [ "string", "null" ]
+        },
+        "timeZone" : {
+          "type" : "string"
+        },
+        "title" : {
+          "type" : "string"
+        }
+      },
+      "required" : [ "address", "amenities", "availabilityRules", "blackouts", "bufferMinutes", "cancellationPolicy", "currency", "hostAccountId", "instantBook", "latitude", "listingId", "longitude", "maxVehicleType", "pricePerHour", "status", "thumbnailUrl", "timeZone", "title" ],
+      "additionalProperties" : false
+    },
+    "publishedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "listing", "publishedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/listing.listing.v1/ListingPublished.v1.schema.json",
+  "title" : "ListingPublished v1",
+  "x-topic" : "listing.listing.v1"
+}

@@ -1,0 +1,21 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "phone" : {
+      "type" : "string"
+    },
+    "verifiedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "accountId", "phone", "verifiedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/identity.account.v1/PhoneVerified.v1.schema.json",
+  "title" : "PhoneVerified v1",
+  "x-topic" : "identity.account.v1"
+}

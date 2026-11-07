@@ -1,0 +1,21 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "reason" : {
+      "type" : "string"
+    },
+    "suspendedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "accountId", "reason", "suspendedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/identity.account.v1/AccountSuspended.v1.schema.json",
+  "title" : "AccountSuspended v1",
+  "x-topic" : "identity.account.v1"
+}

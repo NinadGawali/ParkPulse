@@ -22,6 +22,7 @@
     <module>shared/common-events</module>
     <module>shared/common-web</module>
     <module>shared/common-security</module>
+    <module>tools/contract-validation</module>
     <!-- services/<name> modules are added by /new-service -->
   </modules>
 
@@ -31,6 +32,8 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <spring-cloud.version>2025.0.3</spring-cloud.version>
     <spotless.version>3.11.0</spotless.version>
+    <victools-jsonschema.version>4.38.0</victools-jsonschema.version>
+    <swagger-parser.version>2.1.48</swagger-parser.version>
   </properties>
 
   <dependencyManagement>

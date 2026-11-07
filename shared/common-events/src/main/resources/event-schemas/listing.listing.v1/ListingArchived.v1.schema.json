@@ -1,0 +1,22 @@
+{
+  "type" : "object",
+  "properties" : {
+    "archivedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "archivedAt", "hostAccountId", "listingId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/listing.listing.v1/ListingArchived.v1.schema.json",
+  "title" : "ListingArchived v1",
+  "x-topic" : "listing.listing.v1"
+}

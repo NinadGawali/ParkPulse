@@ -1,0 +1,22 @@
+{
+  "type" : "object",
+  "properties" : {
+    "ownerAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "removedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "vehicleId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "ownerAccountId", "removedAt", "vehicleId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/profile.profile.v1/VehicleRemoved.v1.schema.json",
+  "title" : "VehicleRemoved v1",
+  "x-topic" : "profile.profile.v1"
+}

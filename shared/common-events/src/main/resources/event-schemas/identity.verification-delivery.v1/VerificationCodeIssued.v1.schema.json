@@ -1,0 +1,30 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "channel" : {
+      "type" : "string"
+    },
+    "code" : {
+      "type" : "string"
+    },
+    "destination" : {
+      "type" : "string"
+    },
+    "expiresAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "purpose" : {
+      "type" : "string"
+    }
+  },
+  "required" : [ "accountId", "channel", "code", "destination", "expiresAt", "purpose" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/identity.verification-delivery.v1/VerificationCodeIssued.v1.schema.json",
+  "title" : "VerificationCodeIssued v1",
+  "x-topic" : "identity.verification-delivery.v1"
+}

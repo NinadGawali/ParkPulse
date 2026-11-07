@@ -1,0 +1,28 @@
+{
+  "type" : "object",
+  "properties" : {
+    "amount" : {
+      "type" : "string"
+    },
+    "authorizedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "currency" : {
+      "type" : "string"
+    },
+    "intentId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "amount", "authorizedAt", "bookingId", "currency", "intentId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/payment.payment.v1/PaymentAuthorized.v1.schema.json",
+  "title" : "PaymentAuthorized v1",
+  "x-topic" : "payment.payment.v1"
+}

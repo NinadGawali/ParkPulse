@@ -1,0 +1,21 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "email" : {
+      "type" : "string"
+    },
+    "registeredAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "accountId", "email", "registeredAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/identity.account.v1/AccountRegistered.v1.schema.json",
+  "title" : "AccountRegistered v1",
+  "x-topic" : "identity.account.v1"
+}

@@ -1,0 +1,21 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "grantedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "role" : {
+      "type" : "string"
+    }
+  },
+  "required" : [ "accountId", "grantedAt", "role" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/identity.account.v1/RoleGranted.v1.schema.json",
+  "title" : "RoleGranted v1",
+  "x-topic" : "identity.account.v1"
+}

@@ -1,0 +1,22 @@
+{
+  "type" : "object",
+  "properties" : {
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "submittedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "hostAccountId", "listingId", "submittedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/listing.listing.v1/ListingSubmittedForReview.v1.schema.json",
+  "title" : "ListingSubmittedForReview v1",
+  "x-topic" : "listing.listing.v1"
+}

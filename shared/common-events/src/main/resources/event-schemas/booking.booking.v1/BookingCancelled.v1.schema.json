@@ -1,0 +1,50 @@
+{
+  "type" : "object",
+  "properties" : {
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "cancelledAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "cancelledBy" : {
+      "type" : "string"
+    },
+    "currency" : {
+      "type" : "string"
+    },
+    "driverAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "endTime" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "reason" : {
+      "type" : "string"
+    },
+    "refundAmount" : {
+      "type" : "string"
+    },
+    "startTime" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "bookingId", "cancelledAt", "cancelledBy", "currency", "driverAccountId", "endTime", "hostAccountId", "listingId", "reason", "refundAmount", "startTime" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/booking.booking.v1/BookingCancelled.v1.schema.json",
+  "title" : "BookingCancelled v1",
+  "x-topic" : "booking.booking.v1"
+}

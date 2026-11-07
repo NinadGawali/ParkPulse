@@ -1,0 +1,38 @@
+{
+  "type" : "object",
+  "properties" : {
+    "amount" : {
+      "type" : "string"
+    },
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "capturedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "commissionAmount" : {
+      "type" : "string"
+    },
+    "currency" : {
+      "type" : "string"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "hostNetAmount" : {
+      "type" : "string"
+    },
+    "intentId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "amount", "bookingId", "capturedAt", "commissionAmount", "currency", "hostAccountId", "hostNetAmount", "intentId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/payment.payment.v1/PaymentCaptured.v1.schema.json",
+  "title" : "PaymentCaptured v1",
+  "x-topic" : "payment.payment.v1"
+}

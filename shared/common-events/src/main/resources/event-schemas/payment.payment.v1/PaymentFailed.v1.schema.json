@@ -1,0 +1,25 @@
+{
+  "type" : "object",
+  "properties" : {
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "failedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "failureCode" : {
+      "type" : "string"
+    },
+    "intentId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "bookingId", "failedAt", "failureCode", "intentId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/payment.payment.v1/PaymentFailed.v1.schema.json",
+  "title" : "PaymentFailed v1",
+  "x-topic" : "payment.payment.v1"
+}

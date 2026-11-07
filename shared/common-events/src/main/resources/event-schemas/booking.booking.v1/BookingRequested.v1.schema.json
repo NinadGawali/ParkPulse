@@ -1,0 +1,51 @@
+{
+  "type" : "object",
+  "properties" : {
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "currency" : {
+      "type" : "string"
+    },
+    "driverAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "endTime" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "instantBook" : {
+      "type" : "boolean"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "paymentDueBy" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "requestedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "startTime" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "totalAmount" : {
+      "type" : "string"
+    }
+  },
+  "required" : [ "bookingId", "currency", "driverAccountId", "endTime", "hostAccountId", "instantBook", "listingId", "paymentDueBy", "requestedAt", "startTime", "totalAmount" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/booking.booking.v1/BookingRequested.v1.schema.json",
+  "title" : "BookingRequested v1",
+  "x-topic" : "booking.booking.v1"
+}
