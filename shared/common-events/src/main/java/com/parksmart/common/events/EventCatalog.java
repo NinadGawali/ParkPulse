@@ -33,6 +33,7 @@ import com.parksmart.common.events.payment.PaymentRefunded;
 import com.parksmart.common.events.payment.PaymentVoided;
 import com.parksmart.common.events.payment.PayoutCompleted;
 import com.parksmart.common.events.payment.PayoutFailed;
+import com.parksmart.common.events.profile.NotificationPreferencesChanged;
 import com.parksmart.common.events.profile.ProfileUpdated;
 import com.parksmart.common.events.profile.VehicleAdded;
 import com.parksmart.common.events.profile.VehicleRemoved;
@@ -60,6 +61,7 @@ public final class EventCatalog {
           v1(ProfileUpdated.class, Topics.PROFILE),
           v1(VehicleAdded.class, Topics.PROFILE),
           v1(VehicleRemoved.class, Topics.PROFILE),
+          v1(NotificationPreferencesChanged.class, Topics.PROFILE),
           v1(ListingCreated.class, Topics.LISTING),
           v1(ListingSubmittedForReview.class, Topics.LISTING),
           v1(ListingPublished.class, Topics.LISTING),

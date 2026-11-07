@@ -44,7 +44,7 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 ## Module map
 | Path | Purpose | Status |
 |---|---|---|
-| `shared/common-events` | Event envelope, catalog, 38 versioned payload records + JSON Schemas | done |
+| `shared/common-events` | Event envelope, catalog, 39 versioned payload records + JSON Schemas | done |
 | `shared/common-web` | ProblemDetail handling, cursor paging, correlation ID | done |
 | `shared/common-security` | RS256 JWT validation, roles, CurrentAccount, 401/403 problems | done |
 | `services/gateway` (:8080) | Spring Cloud Gateway: routing, edge JWT check, Redis rate limits | done |

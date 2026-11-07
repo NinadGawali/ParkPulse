@@ -93,6 +93,10 @@ class PayoutAndPreferencesIT extends IntegrationTest {
         .andExpect(jsonPath("$.preferences[?(@.channel == 'EMAIL')].enabled").value(true));
     get(PREFS, user)
         .andExpect(jsonPath("$.preferences[?(@.channel == 'SMS')].enabled").value(false));
+    var changed = events("NotificationPreferencesChanged", "accountId", user.id());
+    assertThat(changed).hasSize(1);
+    assertThat(changed.get(0).get("payload").get("sms").asBoolean()).isFalse();
+    assertThat(changed.get(0).get("payload").get("email").asBoolean()).isTrue();
 
     // Another user is unaffected.
     get(PREFS, driver())

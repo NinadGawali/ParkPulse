@@ -1,0 +1,27 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "changedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "email" : {
+      "type" : "boolean"
+    },
+    "push" : {
+      "type" : "boolean"
+    },
+    "sms" : {
+      "type" : "boolean"
+    }
+  },
+  "required" : [ "accountId", "changedAt", "email", "push", "sms" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/profile.profile.v1/NotificationPreferencesChanged.v1.schema.json",
+  "title" : "NotificationPreferencesChanged v1",
+  "x-topic" : "profile.profile.v1"
+}
