@@ -16,7 +16,15 @@ info:
     (HOST role, phone verified, profile photo set).
 
     Editing a PUBLISHED listing keeps it PUBLISHED, except changes to address/location, which
-    send it back to PENDING_REVIEW. Price/policy changes never affect existing bookings (Booking snapshots them).
+    send it back to PENDING_REVIEW (emits `ListingSubmittedForReview`; Search hides the listing).
+    Price/policy changes never affect existing bookings (Booking snapshots them).
+
+    Events (topic `listing.listing.v1`): ListingCreated, ListingSubmittedForReview,
+    ListingPublished (approve and resume), ListingUpdated (terms or photos of a PUBLISHED/PAUSED
+    listing), AvailabilityChanged (rules/blackouts of a PUBLISHED/PAUSED listing; drafts emit
+    nothing), ListingPaused (also when the host is suspended), ListingRejected, ListingArchived.
+    Every response carrying a listing has an ETag (its version); any change to the listing,
+    photos and rules included, changes it.
 servers:
   - url: http://localhost:8080
 security:
@@ -55,7 +63,9 @@ paths:
       tags: [listings]
       operationId: getListing
       security: [{}, { bearerAuth: [] }]
-      description: PUBLISHED listings are public. Other statuses are visible only to the owner and ADMIN (404 otherwise).
+      description: |
+        PUBLISHED listings are public. Other statuses are visible only to the owner and ADMIN (404
+        otherwise). The public view lists READY photos only and omits blackout reasons.
       responses:
         '200':
           description: Listing.
@@ -67,7 +77,9 @@ paths:
     patch:
       tags: [listings]
       operationId: updateListing
-      description: Owner only. Partial update; omitted fields are unchanged. Not allowed while PENDING_REVIEW or ARCHIVED (409).
+      description: |
+        Owner only. Partial update; omitted fields are unchanged (an empty description clears it).
+        Not allowed while PENDING_REVIEW or ARCHIVED (409). A missing If-Match is 400; a stale one 412.
       parameters:
         - $ref: 'common.yaml#/components/parameters/IfMatch'
       requestBody:
@@ -183,7 +195,10 @@ paths:
     post:
       tags: [photos]
       operationId: confirmPhotoUpload
-      description: Owner only. Server checks the object exists with the declared type and size, then marks the photo READY.
+      description: |
+        Owner only. The server copies the uploaded object to a server-owned public key, checks the
+        copy's declared type, size and image signature, then marks the photo READY (the upload URL
+        can no longer change it). 422 `upload-missing` / `upload-mismatch` / `upload-expired`.
       responses:
         '200': { description: Confirmed., content: { application/json: { schema: { $ref: '#/components/schemas/Photo' } } } }
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
@@ -341,6 +356,8 @@ paths:
         Called by Booking Service while creating a booking. Not routed by the gateway.
         Requires a JWT with DRIVER (Booking forwards the driver's token); otherwise 403.
         Booking itself rejects a driver booking their own listing (hostAccountId == caller).
+        Archived listings are 404; other non-PUBLISHED listings return `bookable: false`,
+        `unbookableReason: NOT_PUBLISHED`. Windows longer than 31 days are 400.
         Returns the terms Booking snapshots and whether the window fits the listing's availability
         rules and blackouts. Booking still enforces overlap with other bookings in its own DB.
       parameters:
