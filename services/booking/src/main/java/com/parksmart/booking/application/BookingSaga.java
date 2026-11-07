@@ -6,6 +6,7 @@ import com.parksmart.booking.application.port.ProcessedEvents;
 import com.parksmart.booking.domain.Booking;
 import com.parksmart.booking.domain.BookingStatus;
 import com.parksmart.booking.domain.DomainException;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
@@ -40,24 +41,43 @@ public class BookingSaga {
   }
 
   @Transactional
-  public void paymentAuthorized(UUID eventId, UUID bookingId) {
-    onEvent(eventId, bookingId, b -> b.paymentAuthorized(clock.instant()), "payment authorized");
+  public void paymentAuthorized(
+      UUID eventId, UUID bookingId, UUID driver, UUID host, BigDecimal amount, String currency) {
+    if (!processed.markProcessed(eventId, CONSUMER)) {
+      return;
+    }
+    Booking b = verified(bookingId, driver, host, amount, currency);
+    if (b == null) {
+      return;
+    }
+    if (bookings.isListingArchived(b.listingId())) {
+      // Raced an archive: never confirm on a withdrawn listing (Payment voids on BookingExpired).
+      tryTransition(b, x -> x.listingWithdrawn(clock.instant()), "listing archived");
+      return;
+    }
+    tryTransition(b, x -> x.paymentAuthorized(clock.instant()), "payment authorized");
   }
 
   @Transactional
-  public void paymentFailed(UUID eventId, UUID bookingId, String failureCode) {
+  public void paymentFailed(
+      UUID eventId, UUID bookingId, UUID driver, UUID host, String failureCode) {
     onEvent(
         eventId,
         bookingId,
+        driver,
+        host,
         b -> b.paymentFailed(clock.instant()),
         "payment failed: " + failureCode);
   }
 
   @Transactional
-  public void captureFailed(UUID eventId, UUID bookingId, String failureCode) {
+  public void captureFailed(
+      UUID eventId, UUID bookingId, UUID driver, UUID host, String failureCode) {
     onEvent(
         eventId,
         bookingId,
+        driver,
+        host,
         b -> b.captureFailed(clock.instant()),
         "capture failed: " + failureCode);
   }
@@ -68,21 +88,44 @@ public class BookingSaga {
     if (!processed.markProcessed(eventId, CONSUMER)) {
       return;
     }
+    bookings.markListingArchived(listingId, clock.instant());
     for (Booking b : bookings.activeByListing(listingId)) {
       tryTransition(b, x -> x.listingWithdrawn(clock.instant()), "listing archived");
     }
   }
 
   private void onEvent(
-      UUID eventId, UUID bookingId, Function<Booking, BookingStatus> step, String reason) {
+      UUID eventId,
+      UUID bookingId,
+      UUID driver,
+      UUID host,
+      Function<Booking, BookingStatus> step,
+      String reason) {
     if (!processed.markProcessed(eventId, CONSUMER)) {
       return;
     }
-    bookings
-        .findById(bookingId)
-        .ifPresentOrElse(
-            b -> tryTransition(b, step, reason),
-            () -> log.warn("Event {} for unknown booking {} ignored", eventId, bookingId));
+    Booking b = verified(bookingId, driver, host, null, null);
+    if (b != null) {
+      tryTransition(b, step, reason);
+    }
+  }
+
+  /**
+   * The booking, if the Payment event's driver, host and (when given) amount and currency match it.
+   * A mismatch means a forged or broken event: it is logged and has no effect.
+   */
+  private Booking verified(
+      UUID bookingId, UUID driver, UUID host, BigDecimal amount, String currency) {
+    Booking b = bookings.findById(bookingId).orElse(null);
+    if (b == null) {
+      log.warn("Payment event for unknown booking {} ignored", bookingId);
+      return null;
+    }
+    if (!b.matchesPayment(driver, host, amount, currency)) {
+      log.warn("Payment event does not match booking {}; ignored", bookingId);
+      return null;
+    }
+    return b;
   }
 
   // ---------------------------------------------------------------- timers

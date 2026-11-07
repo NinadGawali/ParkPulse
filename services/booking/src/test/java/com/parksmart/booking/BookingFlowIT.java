@@ -330,7 +330,7 @@ class BookingFlowIT extends BookingIT {
     UUID listing = listings.listing(host().id(), true, "FLEXIBLE", 0);
     UUID b = id(booked(driver(), listing, slot(24), slot(25)));
     authorize(b);
-    saga.captureFailed(UUID.randomUUID(), b, "card_declined");
+    saga.captureFailed(UUID.randomUUID(), b, driverOf(b), hostOf(b), "card_declined");
     assertThat(statusOf(b)).isEqualTo("PAYMENT_FAILED");
     booked(driver(), listing, slot(24), slot(25));
   }
@@ -364,5 +364,76 @@ class BookingFlowIT extends BookingIT {
     assertThat(body(get("/api/v1/bookings?role=host", driver)).get("items")).isEmpty();
     get("/api/v1/bookings?role=nobody", driver).andExpect(status().isBadRequest());
     get("/api/v1/bookings", driver).andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void forged_payment_events_do_not_confirm_bookings() throws Exception {
+    UUID listing = listings.listing(host().id(), true, "FLEXIBLE", 0);
+    UUID b = id(booked(driver(), listing, slot(24), slot(25)));
+    saga.paymentAuthorized(
+        UUID.randomUUID(), b, driverOf(b), hostOf(b), new java.math.BigDecimal("0.01"), "INR");
+    saga.paymentAuthorized(
+        UUID.randomUUID(),
+        b,
+        UUID.randomUUID(),
+        hostOf(b),
+        new java.math.BigDecimal("60.00"),
+        "INR");
+    saga.paymentFailed(UUID.randomUUID(), b, UUID.randomUUID(), hostOf(b), "x");
+    assertThat(statusOf(b)).isEqualTo("PENDING_PAYMENT");
+    authorize(b);
+    assertThat(statusOf(b)).isEqualTo("CONFIRMED");
+  }
+
+  @Test
+  void a_driver_holds_at_most_three_unpaid_bookings_and_one_year_ahead() throws Exception {
+    UUID listing = listings.listing(host().id(), true, "FLEXIBLE", 0);
+    User driver = driver();
+    for (int i = 0; i < 3; i++) {
+      booked(driver, listing, slot(24 + 2 * i), slot(25 + 2 * i));
+    }
+    book(driver, "k-" + UUID.randomUUID(), body(listing, slot(40), slot(41)))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(
+            jsonPath("$.type").value("https://parksmart.dev/problems/too-many-pending-bookings"));
+    book(driver(), "k-" + UUID.randomUUID(), body(listing, slot(24 * 400), slot(24 * 400 + 1)))
+        .andExpect(
+            jsonPath("$.type").value("https://parksmart.dev/problems/invalid-booking-window"));
+  }
+
+  @Test
+  void the_host_cannot_decide_after_the_deadline() throws Exception {
+    User host = host();
+    UUID listing = listings.listing(host.id(), false, "FLEXIBLE", 0);
+    UUID b = id(booked(driver(), listing, slot(48), slot(49)));
+    authorize(b);
+    clock.advance(Duration.ofHours(24));
+    post("/api/v1/bookings/" + b + "/approve", host).andExpect(status().isConflict());
+    postJson("/api/v1/bookings/" + b + "/decline", Map.of("reason", "late"), host)
+        .andExpect(status().isConflict());
+  }
+
+  @Test
+  void archived_listings_refuse_new_bookings_and_raced_ones_never_confirm() throws Exception {
+    UUID listing = listings.listing(host().id(), true, "FLEXIBLE", 0);
+    UUID raced = id(booked(driver(), listing, slot(24), slot(25)));
+    // The archive was processed, then a booking that read the old quote got in.
+    jdbc.sql("INSERT INTO archived_listings (listing_id, archived_at) VALUES (:l, now())")
+        .param("l", listing)
+        .update();
+    book(driver(), "k-" + UUID.randomUUID(), body(listing, slot(48), slot(49)))
+        .andExpect(status().isNotFound());
+    authorize(raced);
+    assertThat(statusOf(raced)).isEqualTo("EXPIRED");
+  }
+
+  @Test
+  void reasons_reject_invisible_characters() throws Exception {
+    User host = host();
+    UUID listing = listings.listing(host.id(), true, "FLEXIBLE", 0);
+    UUID b = id(booked(driver(), listing, slot(24), slot(25)));
+    authorize(b);
+    postJson("/api/v1/bookings/" + b + "/cancel", Map.of("reason", "<b>x</b>‮"), host)
+        .andExpect(status().isBadRequest());
   }
 }

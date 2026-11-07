@@ -21,6 +21,7 @@ class DomainExceptionHandler {
           "booking-overlap", HttpStatus.CONFLICT,
           "illegal-booking-transition", HttpStatus.CONFLICT,
           "check-in-window", HttpStatus.CONFLICT,
+          "too-many-pending-bookings", HttpStatus.TOO_MANY_REQUESTS,
           "invalid-booking-window", HttpStatus.UNPROCESSABLE_ENTITY);
 
   private static final Map<String, String> TITLES =
@@ -31,7 +32,8 @@ class DomainExceptionHandler {
           "invalid-booking-window", "Invalid booking window",
           "listing-not-bookable", "Listing not bookable",
           "cannot-book-own-listing", "Cannot book own listing",
-          "idempotency-key-reused", "Idempotency-Key reused");
+          "idempotency-key-reused", "Idempotency-Key reused",
+          "too-many-pending-bookings", "Too many unpaid bookings");
 
   @ExceptionHandler(DomainException.class)
   ResponseEntity<ProblemDetail> handle(DomainException ex) {

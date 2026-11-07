@@ -45,7 +45,7 @@
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
-      <scope>runtime</scope>
+      <!-- compile scope: constraint names are read from PSQLException -->
     </dependency>
     <dependency>
       <groupId>org.springframework.kafka</groupId>

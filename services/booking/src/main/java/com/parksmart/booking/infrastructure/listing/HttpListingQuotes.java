@@ -34,7 +34,16 @@ class HttpListingQuotes implements ListingQuotes {
       RestClient.Builder builder,
       @Value("${parksmart.listing.base-url}") String baseUrl,
       @Value("${parksmart.listing.timeout:2s}") Duration timeout) {
-    SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+    // Never follow redirects: the driver's token must only ever reach Listing.
+    SimpleClientHttpRequestFactory factory =
+        new SimpleClientHttpRequestFactory() {
+          @Override
+          protected void prepareConnection(java.net.HttpURLConnection connection, String method)
+              throws java.io.IOException {
+            super.prepareConnection(connection, method);
+            connection.setInstanceFollowRedirects(false);
+          }
+        };
     factory.setConnectTimeout(timeout);
     factory.setReadTimeout(timeout);
     this.client = builder.baseUrl(baseUrl).requestFactory(factory).build();
@@ -91,10 +100,18 @@ class HttpListingQuotes implements ListingQuotes {
         throw ApiException.badRequest(
             "invalid-booking-window", "Invalid booking window", "Listing rejected the window");
       }
-      if (status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN) {
+      if (status == HttpStatus.UNAUTHORIZED) {
+        throw ApiException.unauthorized("The access token was rejected");
+      }
+      if (status == HttpStatus.FORBIDDEN) {
         throw ApiException.forbidden("Only drivers can book");
       }
       log.warn("Listing quote returned {}", e.getStatusCode());
+      throw unavailable();
+    } catch (ResourceAccessException e) {
+      throw e; // retried by the caller
+    } catch (org.springframework.web.client.RestClientException e) {
+      log.warn("Listing quote unreadable: {}", e.getClass().getSimpleName());
       throw unavailable();
     }
     if (body == null) {
@@ -106,11 +123,19 @@ class HttpListingQuotes implements ListingQuotes {
         body.status(),
         body.bookable(),
         body.unbookableReason(),
-        new BigDecimal(body.pricePerHour()),
+        money(body.pricePerHour()),
         body.currency(),
         body.instantBook(),
         body.cancellationPolicy(),
         body.bufferMinutes());
+  }
+
+  private static BigDecimal money(String value) {
+    try {
+      return new BigDecimal(value);
+    } catch (RuntimeException e) {
+      throw unavailable();
+    }
   }
 
   private static ApiException unavailable() {

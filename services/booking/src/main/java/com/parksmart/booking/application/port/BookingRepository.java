@@ -63,6 +63,14 @@ public interface BookingRepository {
     COMPLETION
   }
 
+  /** Unpaid (PENDING_PAYMENT) bookings a driver holds right now. */
+  int countPending(UUID driverAccountId);
+
+  /** Records that a listing was archived (idempotent). */
+  void markListingArchived(UUID listingId, Instant at);
+
+  boolean isListingArchived(UUID listingId);
+
   /** Active bookings of a listing (for a withdrawn listing). */
   List<Booking> activeByListing(UUID listingId);
 

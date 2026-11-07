@@ -100,7 +100,7 @@ class JdbcBookingRepository implements BookingRepository {
         throw new DomainException(
             "booking-overlap", "This time overlaps another booking of the listing");
       }
-      if (UNIQUE_VIOLATION.equals(state) && e.getMessage().contains("uq_booking_idempotency")) {
+      if (UNIQUE_VIOLATION.equals(state) && "uq_booking_idempotency".equals(constraint(e))) {
         throw new DuplicateIdempotencyKey();
       }
       throw e;
@@ -225,6 +225,34 @@ class JdbcBookingRepository implements BookingRepository {
   }
 
   @Override
+  public int countPending(UUID driverAccountId) {
+    return jdbc.sql(
+            "SELECT count(*) FROM bookings WHERE driver_account_id = :d AND status = 'PENDING_PAYMENT'")
+        .param("d", driverAccountId)
+        .query(Integer.class)
+        .single();
+  }
+
+  @Override
+  public void markListingArchived(UUID listingId, Instant at) {
+    jdbc.sql(
+            "INSERT INTO archived_listings (listing_id, archived_at) VALUES (:l, :at)"
+                + " ON CONFLICT DO NOTHING")
+        .param("l", listingId)
+        .param("at", ts(at))
+        .update();
+  }
+
+  @Override
+  public boolean isListingArchived(UUID listingId) {
+    return Boolean.TRUE.equals(
+        jdbc.sql("SELECT EXISTS (SELECT 1 FROM archived_listings WHERE listing_id = :l)")
+            .param("l", listingId)
+            .query(Boolean.class)
+            .single());
+  }
+
+  @Override
   public List<Booking> activeByListing(UUID listingId) {
     return jdbc.sql(
             "SELECT "
@@ -262,6 +290,15 @@ class JdbcBookingRepository implements BookingRepository {
         instant(rs, "created_at"),
         instant(rs, "updated_at"),
         rs.getInt("version"));
+  }
+
+  private static String constraint(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t instanceof org.postgresql.util.PSQLException p && p.getServerErrorMessage() != null) {
+        return p.getServerErrorMessage().getConstraint();
+      }
+    }
+    return null;
   }
 
   private static String sqlState(Throwable e) {

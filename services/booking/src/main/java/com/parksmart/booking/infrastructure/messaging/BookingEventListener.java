@@ -46,9 +46,20 @@ class BookingEventListener {
     try {
       var id = envelope.eventId();
       switch (envelope.payload()) {
-        case PaymentAuthorized e -> saga.paymentAuthorized(id, e.bookingId());
-        case PaymentFailed e -> saga.paymentFailed(id, e.bookingId(), e.failureCode());
-        case PaymentCaptureFailed e -> saga.captureFailed(id, e.bookingId(), e.failureCode());
+        case PaymentAuthorized e ->
+            saga.paymentAuthorized(
+                id,
+                e.bookingId(),
+                e.driverAccountId(),
+                e.hostAccountId(),
+                e.amount(),
+                e.currency());
+        case PaymentFailed e ->
+            saga.paymentFailed(
+                id, e.bookingId(), e.driverAccountId(), e.hostAccountId(), e.failureCode());
+        case PaymentCaptureFailed e ->
+            saga.captureFailed(
+                id, e.bookingId(), e.driverAccountId(), e.hostAccountId(), e.failureCode());
         case ListingArchived e -> saga.listingArchived(id, e.listingId());
         default -> {
           // Not ours (record had no eventType header): ignore.

@@ -29,9 +29,14 @@ class BookingTimers {
   void run() {
     for (Timer timer : Timer.values()) {
       try {
-        int moved = saga.runTimer(timer, BATCH);
-        if (moved > 0) {
-          log.info("{}: {} bookings moved", timer, moved);
+        int total = 0;
+        int moved;
+        do { // drain the backlog so expired slots are freed promptly
+          moved = saga.runTimer(timer, BATCH);
+          total += moved;
+        } while (moved == BATCH);
+        if (total > 0) {
+          log.info("{}: {} bookings moved", timer, total);
         }
       } catch (RuntimeException e) {
         log.warn("Timer {} failed; will retry", timer, e);

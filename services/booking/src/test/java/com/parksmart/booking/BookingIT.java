@@ -157,7 +157,33 @@ abstract class BookingIT extends IntegrationTest {
 
   /** Simulates Payment's PaymentAuthorized for a booking. */
   void authorize(UUID bookingId) {
-    saga.paymentAuthorized(UUID.randomUUID(), bookingId);
+    var row =
+        jdbc.sql(
+                "SELECT driver_account_id, host_account_id, total_amount FROM bookings WHERE id = :id")
+            .param("id", bookingId)
+            .query()
+            .singleRow();
+    saga.paymentAuthorized(
+        UUID.randomUUID(),
+        bookingId,
+        (UUID) row.get("driver_account_id"),
+        (UUID) row.get("host_account_id"),
+        (BigDecimal) row.get("total_amount"),
+        "INR");
+  }
+
+  UUID driverOf(UUID bookingId) {
+    return jdbc.sql("SELECT driver_account_id FROM bookings WHERE id = :id")
+        .param("id", bookingId)
+        .query(UUID.class)
+        .single();
+  }
+
+  UUID hostOf(UUID bookingId) {
+    return jdbc.sql("SELECT host_account_id FROM bookings WHERE id = :id")
+        .param("id", bookingId)
+        .query(UUID.class)
+        .single();
   }
 
   int runTimer(Timer timer) {

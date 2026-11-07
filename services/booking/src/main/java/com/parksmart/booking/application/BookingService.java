@@ -73,6 +73,14 @@ public class BookingService {
     }
     Instant now = clock.instant();
     Booking.validateWindow(cmd.start(), cmd.end(), now);
+    if (bookings.countPending(driver.accountId()) >= Booking.MAX_PENDING_PER_DRIVER) {
+      throw new DomainException(
+          "too-many-pending-bookings",
+          "Pay for or let your unpaid bookings expire before starting another");
+    }
+    if (bookings.isListingArchived(cmd.listingId())) {
+      throw ApiException.notFound("Listing");
+    }
     Quote quote = listings.quote(cmd.listingId(), cmd.start(), cmd.end(), driver.accessToken());
     if (driver.accountId().equals(quote.hostAccountId())) {
       throw new DomainException("cannot-book-own-listing", "You cannot book your own listing");
@@ -90,13 +98,7 @@ public class BookingService {
             cmd.vehicleId(),
             cmd.start(),
             cmd.end(),
-            new Booking.Terms(
-                quote.hostAccountId(),
-                quote.pricePerHour(),
-                quote.currency(),
-                quote.instantBook(),
-                CancellationPolicy.valueOf(quote.cancellationPolicy()),
-                quote.bufferMinutes()),
+            terms(quote),
             idempotencyKey,
             hash,
             clock.instant());
@@ -110,6 +112,34 @@ public class BookingService {
       Booking winner =
           bookings.findByIdempotencyKey(driver.accountId(), idempotencyKey).orElseThrow();
       return replay(winner, hash);
+    } catch (DomainException e) {
+      // A concurrent identical request may surface as an overlap with its own slot.
+      if ("booking-overlap".equals(e.code())) {
+        var winner = bookings.findByIdempotencyKey(driver.accountId(), idempotencyKey);
+        if (winner.isPresent()) {
+          return replay(winner.get(), hash);
+        }
+      }
+      throw e;
+    }
+  }
+
+  /** A malformed quote is Listing's failure, not the driver's: 503. */
+  private static Booking.Terms terms(Quote quote) {
+    try {
+      return new Booking.Terms(
+          quote.hostAccountId(),
+          quote.pricePerHour(),
+          quote.currency(),
+          quote.instantBook(),
+          CancellationPolicy.valueOf(quote.cancellationPolicy()),
+          quote.bufferMinutes());
+    } catch (RuntimeException e) {
+      throw new ApiException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          "listing-unavailable",
+          "Listing unavailable",
+          "The listing returned unusable terms");
     }
   }
 
@@ -175,7 +205,8 @@ public class BookingService {
   // ---------------------------------------------------------------- party actions
 
   @Transactional
-  public Booking cancel(UUID callerId, UUID bookingId, String reason) {
+  public Booking cancel(UUID callerId, UUID bookingId, String rawReason) {
+    String reason = Booking.cleanReason(rawReason);
     Booking b = load(bookingId);
     if (b.isDriver(callerId)) {
       return apply(b, x -> x.cancelByDriver(clock.instant()), callerId, reason);
@@ -193,7 +224,8 @@ public class BookingService {
   }
 
   @Transactional
-  public Booking decline(UUID callerId, UUID bookingId, String reason) {
+  public Booking decline(UUID callerId, UUID bookingId, String rawReason) {
+    String reason = Booking.cleanReason(rawReason);
     Booking b = asHost(callerId, bookingId);
     return apply(b, x -> x.decline(clock.instant()), callerId, reason);
   }

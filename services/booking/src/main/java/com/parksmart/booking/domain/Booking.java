@@ -38,6 +38,12 @@ public final class Booking {
   public static final Duration CHECK_IN_CLOSES = Duration.ofMinutes(30);
   public static final Duration REVIEW_WINDOW = Duration.ofDays(14);
 
+  /** Bookings may start at most this far ahead. */
+  public static final Duration MAX_LEAD = Duration.ofDays(365);
+
+  /** Unpaid bookings a driver may hold at once (each holds a slot for 10 minutes). */
+  public static final int MAX_PENDING_PER_DRIVER = 3;
+
   /** The listing terms Booking snapshots at creation (from Listing's booking quote). */
   public record Terms(
       UUID hostAccountId,
@@ -52,6 +58,14 @@ public final class Booking {
       Objects.requireNonNull(pricePerHour, "pricePerHour");
       Objects.requireNonNull(currency, "currency");
       Objects.requireNonNull(cancellationPolicy, "cancellationPolicy");
+      if (pricePerHour.signum() <= 0
+          || pricePerHour.scale() > 2
+          || pricePerHour.compareTo(new BigDecimal("100000")) >= 0
+          || !"INR".equals(currency)
+          || bufferMinutes < 0
+          || bufferMinutes > 120) {
+        throw new IllegalArgumentException("Listing terms are out of range");
+      }
     }
   }
 
@@ -120,6 +134,9 @@ public final class Booking {
     }
     if (start.isBefore(now.plus(MIN_LEAD))) {
       throw invalidWindow("startTime must be at least 15 minutes from now");
+    }
+    if (start.isAfter(now.plus(MAX_LEAD))) {
+      throw invalidWindow("startTime can be at most 1 year ahead");
     }
     Duration length = Duration.between(start, end);
     if (length.compareTo(MIN_DURATION) < 0 || length.compareTo(MAX_DURATION) > 0) {
@@ -309,6 +326,7 @@ public final class Booking {
   // ---------------------------------------------------------------- people
 
   public BookingStatus approve(Instant now) {
+    requireBeforeHostDeadline(now);
     BookingStatus from = move(EnumSet.of(AWAITING_HOST_APPROVAL), now);
     hostDecisionDueBy = null;
     status = CONFIRMED;
@@ -317,6 +335,7 @@ public final class Booking {
 
   /** Host declines; the authorization is voided (full refund). */
   public BookingStatus decline(Instant now) {
+    requireBeforeHostDeadline(now);
     BookingStatus from = move(EnumSet.of(AWAITING_HOST_APPROVAL), now);
     hostDecisionDueBy = null;
     refundAmount = totalAmount;
@@ -366,6 +385,26 @@ public final class Booking {
   }
 
   // ---------------------------------------------------------------- helpers
+
+  /** Cancel/decline reasons: shown to the other party and sent in events. */
+  public static String cleanReason(String reason) {
+    return Text.clean(reason, "reason", 1, 255, true, false);
+  }
+
+  /** The expiry timer runs every 30 s; a decision after the deadline must not win. */
+  private void requireBeforeHostDeadline(Instant now) {
+    if (status == AWAITING_HOST_APPROVAL && !now.isBefore(hostDecisionDueBy)) {
+      throw illegal("decide after the host's deadline");
+    }
+  }
+
+  /** True when a Payment event really is about this booking's money. */
+  public boolean matchesPayment(UUID driver, UUID host, BigDecimal amount, String currency) {
+    return driverAccountId.equals(driver)
+        && terms.hostAccountId().equals(host)
+        && (amount == null || totalAmount.compareTo(amount) == 0)
+        && (currency == null || terms.currency().equals(currency));
+  }
 
   private BookingStatus move(Set<BookingStatus> allowed, Instant now) {
     if (!allowed.contains(status)) {

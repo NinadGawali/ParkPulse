@@ -105,4 +105,32 @@ class DoubleBookingIT extends BookingIT {
         .param("key", "k4")
         .update();
   }
+
+  @Test
+  void concurrent_identical_requests_with_one_key_get_one_booking() throws Exception {
+    UUID listing = listings.listing(host().id(), true, "FLEXIBLE", 0);
+    User driver = driver();
+    Instant start = slot(30);
+    var body = body(listing, start, start.plusSeconds(3600));
+    String key = "same-" + UUID.randomUUID();
+    CountDownLatch go = new CountDownLatch(1);
+    ExecutorService pool = Executors.newFixedThreadPool(8);
+    List<Future<org.springframework.mock.web.MockHttpServletResponse>> results = new ArrayList<>();
+    for (int i = 0; i < 8; i++) {
+      results.add(
+          pool.submit(() -> {
+            go.await();
+            return book(driver, key, body).andReturn().getResponse();
+          }));
+    }
+    go.countDown();
+    java.util.Set<String> ids = new java.util.HashSet<>();
+    for (var f : results) {
+      var response = f.get();
+      assertThat(response.getStatus()).isIn(200, 202);
+      ids.add(json.readTree(response.getContentAsString()).get("id").asText());
+    }
+    pool.shutdown();
+    assertThat(ids).hasSize(1);
+  }
 }
