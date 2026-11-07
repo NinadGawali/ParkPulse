@@ -12,3 +12,4 @@
 mvnw text eol=lf
 *.cmd text eol=crlf
 *.jar binary
+Dockerfile text eol=lf
