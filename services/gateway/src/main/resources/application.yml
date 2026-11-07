@@ -121,7 +121,7 @@ spring:
             - id: review
               uri: ${REVIEW_URI}
               predicates:
-                - Path=/api/v1/reviews,/api/v1/reviews/**
+                - Path=/api/v1/reviews,/api/v1/reviews/**,/admin/v1/reviews/**
               filters: *standard-limit
             # Last: every other admin path goes to the Admin BFF (listing/payment admin routes above win).
             - id: admin-bff

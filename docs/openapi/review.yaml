@@ -1,0 +1,136 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart Review Service
+  version: 1.0.0
+  description: |
+    Reviews after completed bookings, in both directions, and the rating aggregates.
+    Owns `Review`, `RatingAggregate`, and `ReviewEligibility` (a projection of BookingCompleted:
+    who may review which booking, until when). Review never calls Booking.
+
+    - DRIVER_TO_LISTING: the booking's driver rates the listing (targetType LISTING).
+    - HOST_TO_DRIVER: the booking's host rates the driver (targetType DRIVER).
+    - One review per booking and direction (409 `review-exists`). Allowed until the booking's
+      `reviewWindowEndsAt` (14 days after completion; 422 `review-window-closed`). A booking
+      Review has not seen complete is 404 (it may still be on its way: retry later).
+    - Events (`review.review.v1`): ReviewSubmitted; RatingAggregateUpdated whenever a target's
+      published reviews change (Search caches listing ratings, Profile driver ratings).
+    - Admins can hide a review (moderation); the aggregate is recomputed.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - name: reviews
+  - name: admin
+paths:
+  /api/v1/reviews:
+    post:
+      tags: [reviews]
+      operationId: submitReview
+      description: The booking's driver or host only (403 for anyone else). Direction follows from the caller.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/SubmitReviewRequest' } }
+      responses:
+        '201':
+          description: Published.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/Review' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+    get:
+      tags: [reviews]
+      operationId: listReviews
+      security: [{}, { bearerAuth: [] }]
+      description: Public. Published reviews of a listing or a driver, newest first.
+      parameters:
+        - { name: targetType, in: query, required: true, schema: { type: string, enum: [LISTING, DRIVER] } }
+        - { name: targetId, in: query, required: true, schema: { type: string, format: uuid } }
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ReviewPage' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+  /api/v1/reviews/summary:
+    get:
+      tags: [reviews]
+      operationId: ratingSummary
+      security: [{}, { bearerAuth: [] }]
+      description: Public. Average and count of published reviews (avgRating null when none).
+      parameters:
+        - { name: targetType, in: query, required: true, schema: { type: string, enum: [LISTING, DRIVER] } }
+        - { name: targetId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Summary.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/RatingSummary' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+  /admin/v1/reviews/{reviewId}/hide:
+    post:
+      tags: [admin]
+      operationId: hideReview
+      description: ADMIN only. Hides a review from lists and aggregates (idempotent).
+      parameters:
+        - { name: reviewId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              additionalProperties: false
+              properties: { reason: { type: string, minLength: 1, maxLength: 255 } }
+      responses:
+        '200': { description: Hidden., content: { application/json: { schema: { $ref: '#/components/schemas/Review' } } } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    bearerAuth: { $ref: 'common.yaml#/components/securitySchemes/bearerAuth' }
+  schemas:
+    SubmitReviewRequest:
+      type: object
+      required: [bookingId, rating]
+      additionalProperties: false
+      properties:
+        bookingId: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: [string, 'null'], maxLength: 1000 }
+    Review:
+      type: object
+      required: [id, bookingId, direction, targetType, targetId, rating, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        bookingId: { type: string, format: uuid }
+        direction: { type: string, enum: [DRIVER_TO_LISTING, HOST_TO_DRIVER] }
+        targetType: { type: string, enum: [LISTING, DRIVER] }
+        targetId: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    ReviewPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Review' } }
+        nextCursor: { type: [string, 'null'] }
+    RatingSummary:
+      type: object
+      required: [targetType, targetId, reviewCount]
+      properties:
+        targetType: { type: string, enum: [LISTING, DRIVER] }
+        targetId: { type: string, format: uuid }
+        avgRating: { type: [string, 'null'] }
+        reviewCount: { type: integer, minimum: 0 }

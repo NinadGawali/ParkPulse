@@ -63,7 +63,12 @@ class SecurityConfig {
                     "/api/v1/auth/password/forgot",
                     "/api/v1/auth/password/reset")
                 .permitAll()
-                .pathMatchers(HttpMethod.GET, "/api/v1/listings/*", "/api/v1/search/**")
+                .pathMatchers(
+                    HttpMethod.GET,
+                    "/api/v1/listings/*",
+                    "/api/v1/search/**",
+                    "/api/v1/reviews",
+                    "/api/v1/reviews/summary")
                 .permitAll()
                 .pathMatchers("/api/v1/**", "/admin/v1/**")
                 .authenticated()
