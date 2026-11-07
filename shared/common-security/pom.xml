@@ -11,5 +11,31 @@
   </parent>
   <artifactId>common-security</artifactId>
   <name>ParkSmart :: common-security</name>
-  <description>Shared JWT (RS256) resource-server filter and principal helpers.</description>
+  <description>Shared JWT (RS256) resource-server support and principal helpers.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.parksmart</groupId>
+      <artifactId>common-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 </project>
