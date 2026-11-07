@@ -23,11 +23,26 @@ final class Text {
     boolean bad =
         trimmed
             .codePoints()
-            .anyMatch(
-                c -> Character.isISOControl(c) && !(allowNewlines && (c == '\n' || c == '\r')));
+            .anyMatch(c ->
+                (Character.isISOControl(c) && !(allowNewlines && (c == '\n' || c == '\r')))
+                    || invisible(c));
     if (bad) {
-      throw new DomainException("invalid-" + field, field + " contains control characters");
+      throw new DomainException(
+          "invalid-" + field, field + " contains control or invisible characters");
     }
     return trimmed;
+  }
+
+  /**
+   * Bidi overrides/isolates, zero-width characters and line/paragraph separators: they let text
+   * look different from what it is (spoofing in admin screens and emails).
+   */
+  private static boolean invisible(int c) {
+    return (c >= 0x202A && c <= 0x202E)
+        || (c >= 0x2066 && c <= 0x2069)
+        || (c >= 0x200B && c <= 0x200F)
+        || c == 0x2028
+        || c == 0x2029
+        || c == 0xFEFF;
   }
 }

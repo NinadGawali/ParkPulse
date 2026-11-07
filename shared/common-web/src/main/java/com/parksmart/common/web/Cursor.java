@@ -15,6 +15,9 @@ public record Cursor(Instant sortKey, UUID id) {
   public static final int MAX_LIMIT = 100;
   private static final char SEPARATOR = '~';
 
+  /** Far beyond any real timestamp, but well inside what Postgres TIMESTAMPTZ can store. */
+  private static final Instant MAX_SORT_KEY = Instant.parse("9999-12-31T23:59:59Z");
+
   public String encode() {
     String raw = sortKey.toString() + SEPARATOR + id;
     return Base64.getUrlEncoder()
@@ -30,9 +33,11 @@ public record Cursor(Instant sortKey, UUID id) {
     try {
       String raw = new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8);
       int separator = raw.indexOf(SEPARATOR);
-      return new Cursor(
-          Instant.parse(raw.substring(0, separator)),
-          UUID.fromString(raw.substring(separator + 1)));
+      Instant sortKey = Instant.parse(raw.substring(0, separator));
+      if (sortKey.isBefore(Instant.EPOCH) || sortKey.isAfter(MAX_SORT_KEY)) {
+        throw new IllegalArgumentException("sort key out of range");
+      }
+      return new Cursor(sortKey, UUID.fromString(raw.substring(separator + 1)));
     } catch (RuntimeException e) {
       throw ApiException.badRequest("invalid-cursor", "Invalid cursor", "The cursor is malformed");
     }
