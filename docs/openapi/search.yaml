@@ -1,0 +1,105 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart Search Service
+  version: 1.0.0
+  description: |
+    Read-only geo search over published listings. Search owns no source data: its index is a
+    projection built from events (event-carried state transfer), behind a `ListingSearchIndex`
+    interface. The first implementation is PostGIS; OpenSearch can replace it later.
+
+    **Projection inputs**
+    - `listing.listing.v1`: ListingPublished / ListingUpdated (full snapshot), AvailabilityChanged
+      (weekly rules + blackouts), ListingPaused / ListingArchived / ListingRejected /
+      ListingSubmittedForReview (hide). Every change is applied only if it is newer than what the
+      index holds (per listing, by the event's own timestamp), so redelivered or out-of-order
+      events never roll a listing back.
+    - `booking.booking.v1`: active bookings occupy `[start, blockedUntil)` (requested bookings
+      occupy `[start, end)` until confirmed); declined, cancelled, expired, completed and no-show
+      bookings free their time. `payment.payment.v1` PaymentCaptureFailed frees it too.
+    - `review.review.v1`: RatingAggregateUpdated (targetType LISTING) sets the listing rating.
+
+    **Freshness**: each result carries `lastUpdatedFromEventAt` (when Search last applied an event
+    for that listing). Results are eventually consistent: Booking's quote and exclusion constraint
+    remain the source of truth for whether a window can really be booked.
+servers:
+  - url: http://localhost:8080
+security: []
+tags:
+  - name: search
+paths:
+  /api/v1/search/listings:
+    get:
+      tags: [search]
+      operationId: searchListings
+      description: |
+        Public. Published listings within `radiusKm` of the point. With `startTime` and `endTime`,
+        only listings whose weekly rules cover the window (in the listing's time zone), with no
+        blackout and no known booking overlapping the window plus the listing's buffer. Each page
+        is ordered by `sort` (distance, then id; or price, then distance, then id).
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: lng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: radiusKm, in: query, required: false, schema: { type: number, exclusiveMinimum: 0, maximum: 50, default: 5 } }
+        - { name: startTime, in: query, required: false, schema: { type: string, format: date-time }, description: Requires endTime. }
+        - { name: endTime, in: query, required: false, schema: { type: string, format: date-time }, description: Requires startTime; at most 31 days after it. }
+        - { name: vehicleType, in: query, required: false, schema: { $ref: 'common.yaml#/components/schemas/VehicleType' }, description: Listings that admit this vehicle (maxVehicleType is this size or larger). }
+        - { name: maxPricePerHour, in: query, required: false, schema: { $ref: 'common.yaml#/components/schemas/Money' } }
+        - name: amenities
+          in: query
+          required: false
+          description: Comma-separated; a listing must have all of them.
+          schema: { type: string, maxLength: 200, examples: ["COVERED,EV_CHARGER"] }
+        - { name: instantBook, in: query, required: false, schema: { type: boolean } }
+        - { name: sort, in: query, required: false, schema: { type: string, enum: [distance, price], default: distance } }
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - $ref: 'common.yaml#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Page of results.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/SearchPage' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+  /api/v1/search/listings/{listingId}:
+    get:
+      tags: [search]
+      operationId: getSearchListing
+      description: Public. The indexed view of one published listing (404 if not published or not indexed yet).
+      parameters:
+        - { name: listingId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Listing.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/SearchResult' } }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+components:
+  schemas:
+    SearchResult:
+      type: object
+      required: [listingId, title, address, location, timeZone, pricePerHour, currency, maxVehicleType, amenities, instantBook, cancellationPolicy, bufferMinutes, ratingCount, lastUpdatedFromEventAt]
+      properties:
+        listingId: { type: string, format: uuid }
+        title: { type: string }
+        address: { type: string }
+        location: { $ref: 'common.yaml#/components/schemas/GeoPoint' }
+        distanceKm: { type: [number, 'null'], description: Present in search results. }
+        timeZone: { type: string }
+        pricePerHour: { $ref: 'common.yaml#/components/schemas/Money' }
+        currency: { $ref: 'common.yaml#/components/schemas/Currency' }
+        estimatedTotal: { oneOf: [{ $ref: 'common.yaml#/components/schemas/Money' }, { type: 'null' }], description: pricePerHour x hours when a window was given. }
+        maxVehicleType: { $ref: 'common.yaml#/components/schemas/VehicleType' }
+        amenities: { type: array, items: { type: string } }
+        instantBook: { type: boolean }
+        cancellationPolicy: { $ref: 'common.yaml#/components/schemas/CancellationPolicy' }
+        bufferMinutes: { type: integer }
+        thumbnailUrl: { type: [string, 'null'], format: uri }
+        ratingAvg: { type: [string, 'null'] }
+        ratingCount: { type: integer }
+        lastUpdatedFromEventAt: { type: string, format: date-time }
+    SearchPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SearchResult' } }
+        nextCursor: { type: [string, 'null'] }
