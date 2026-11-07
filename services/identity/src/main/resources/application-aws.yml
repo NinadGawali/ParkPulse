@@ -1,0 +1,10 @@
+# AWS (ECS/EKS). All values are injected as environment variables from Secrets Manager / SSM:
+# IDENTITY_DB_URL, IDENTITY_DB_USER, IDENTITY_DB_PASSWORD, KAFKA_BOOTSTRAP_SERVERS (MSK),
+# IDENTITY_ISSUER, IDENTITY_CODE_PEPPER, IDENTITY_JWT_PRIVATE_KEY_PEM.
+parksmart:
+  identity:
+    jwt:
+      generate-ephemeral-key: false
+    dev-log-verification-codes: false
+  kafka:
+    replication-factor: 3

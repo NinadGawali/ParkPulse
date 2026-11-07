@@ -1,0 +1,21 @@
+# Testcontainers supply the real connection details via @ServiceConnection; these placeholders
+# only satisfy the required environment variables of application.yml.
+IDENTITY_DB_URL: jdbc:postgresql://overridden-by-testcontainers/identity
+IDENTITY_DB_USER: test
+IDENTITY_DB_PASSWORD: test
+KAFKA_BOOTSTRAP_SERVERS: overridden-by-testcontainers:9092
+IDENTITY_ISSUER: https://identity.parksmart.test
+IDENTITY_CODE_PEPPER: test-pepper-test-pepper-test-pepper-0123
+
+parksmart:
+  identity:
+    jwt:
+      generate-ephemeral-key: true
+  outbox:
+    relay:
+      enabled: false   # tests read the outbox table directly; OutboxRelayIT turns it on
+
+logging:
+  structured:
+    format:
+      console: ""
