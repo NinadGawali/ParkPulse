@@ -35,7 +35,9 @@ paths:
         Public. Published listings within `radiusKm` of the point. With `startTime` and `endTime`,
         only listings whose weekly rules cover the window (in the listing's time zone), with no
         blackout and no known booking overlapping the window plus the listing's buffer. Each page
-        is ordered by `sort` (distance, then id; or price, then distance, then id).
+        is ordered by `sort` (distance, then id; or price, then distance, then id). When many
+        nearby listings do not fit the window, a page can be short (even empty) and still carry a
+        `nextCursor`; keep paging until `nextCursor` is null.
       parameters:
         - { name: lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
         - { name: lng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }

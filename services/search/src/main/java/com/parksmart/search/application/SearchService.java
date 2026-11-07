@@ -23,13 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Runs a search: the index filters geo, price, vehicle, amenities, blackouts and known bookings in
- * SQL; weekly rules (time-zone aware) are checked here. Pages keep fetching until they are full, so
- * a page is only short at the end of the results.
+ * SQL; weekly rules (time-zone aware) are checked here. A page fetches up to 3 batches; when most
+ * candidates miss the window it can be short and still carry a nextCursor.
  */
 @Service
 public class SearchService {
 
-  private static final int MAX_BATCHES = 10;
+  private static final int MAX_BATCHES = 3;
 
   private final ListingSearchIndex index;
 
@@ -43,7 +43,7 @@ public class SearchService {
   @Transactional(readOnly = true)
   public CursorPage<Hit> search(SearchQuery query, String cursor) {
     After after = decode(cursor, query.sort());
-    int batch = Math.max(20, query.limit() * 2);
+    int batch = Math.max(30, query.limit() * 3);
     List<Hit> hits = new ArrayList<>();
     After last = after;
     for (int round = 0; round < MAX_BATCHES; round++) {
@@ -115,6 +115,9 @@ public class SearchService {
       double distance = Double.parseDouble(parts[1]);
       if (!(distance >= 0 && distance <= SearchQuery.MAX_RADIUS_KM)) {
         throw new IllegalArgumentException("distance out of range");
+      }
+      if (!parts[2].matches("\\d{1,8}(\\.\\d{1,2})?")) {
+        throw new IllegalArgumentException("price out of range");
       }
       return new After(distance, new BigDecimal(parts[2]), UUID.fromString(parts[3]));
     } catch (RuntimeException e) {
