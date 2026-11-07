@@ -30,12 +30,14 @@ class JdbcVerificationTokenRepository implements VerificationTokenRepository {
   }
 
   @Override
-  public void insert(VerificationToken token) {
+  public void insert(VerificationToken token, Instant createdAt) {
     jdbc.sql(
             """
             INSERT INTO verification_tokens
-              (id, account_id, purpose, token_hash, destination, expires_at, attempts, consumed_at)
-            VALUES (:id, :accountId, :purpose, :hash, :destination, :expiresAt, :attempts, :consumedAt)
+              (id, account_id, purpose, token_hash, destination, expires_at, attempts, consumed_at,
+               created_at)
+            VALUES (:id, :accountId, :purpose, :hash, :destination, :expiresAt, :attempts, :consumedAt,
+                    :createdAt)
             """)
         .param("id", token.id())
         .param("accountId", token.accountId())
@@ -45,6 +47,7 @@ class JdbcVerificationTokenRepository implements VerificationTokenRepository {
         .param("expiresAt", ts(token.expiresAt()))
         .param("attempts", token.attempts())
         .param("consumedAt", ts(token.consumedAt()))
+        .param("createdAt", ts(createdAt))
         .update();
   }
 

@@ -86,7 +86,7 @@ class VerificationCodes {
     VerificationToken token =
         VerificationToken.issue(
             UUID.randomUUID(), accountId, purpose, secrets.hash(secret), destination, now);
-    tokens.insert(token);
+    tokens.insert(token, now);
     String channel = purpose == VerificationPurpose.PHONE_VERIFY ? "SMS" : "EMAIL";
     outbox.publish(
         new VerificationCodeIssued(

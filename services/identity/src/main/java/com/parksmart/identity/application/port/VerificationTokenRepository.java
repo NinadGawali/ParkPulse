@@ -8,7 +8,11 @@ import java.util.UUID;
 
 public interface VerificationTokenRepository {
 
-  void insert(VerificationToken token);
+  /**
+   * Stores a new token. {@code createdAt} comes from the application clock, the same clock the
+   * resend cooldown is checked against (the DB clock may drift from it).
+   */
+  void insert(VerificationToken token, Instant createdAt);
 
   /** The newest unconsumed token of this purpose for the account, locked for update. */
   Optional<VerificationToken> findActiveForUpdate(UUID accountId, VerificationPurpose purpose);
