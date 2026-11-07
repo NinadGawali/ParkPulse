@@ -27,7 +27,12 @@ if (tool === "Glob" && /(^|[\\/])\.env(\.(?!example\b)[^\\/]*)?$/.test(ti.patter
 
 // Shell tools
 if (tool === "Bash" || tool === "PowerShell") {
-  const cmd = String(ti.command ?? "");
+  let cmd = String(ti.command ?? "");
+
+  // Approved exception: docker compose may be handed the env file (Docker reads it, Claude never
+  // sees the values). `config` is excluded because it prints resolved secrets. Single commands only.
+  const singleCompose = /^\s*docker\s+compose\b/.test(cmd) && !/[;&|`$<>]/.test(cmd);
+  if (singleCompose && !/\bconfig\b/.test(cmd)) cmd = cmd.replace(/--env-file[=\s]+\.env(?=\s|$)/g, "");
 
   const envRef = /(^|[\s"'=<>(\\/])\.env(\.[\w.-]+)?(?=$|[\s"';|&>)])/g;
   for (const m of cmd.matchAll(envRef)) {
