@@ -1,0 +1,82 @@
+# Profile Service. Every host, credential and secret comes from the environment (12-factor);
+# missing values fail startup instead of falling back to defaults.
+spring:
+  application:
+    name: listing-service
+  datasource:
+    url: ${LISTING_DB_URL}
+    username: ${LISTING_DB_USER}
+    password: ${LISTING_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${LISTING_DB_POOL_SIZE:10}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # Flyway owns the schema; Hibernate only checks it matches
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        default_batch_fetch_size: 50   # photos/rules/blackouts of a page load in one query each
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        delivery.timeout.ms: 30000
+    consumer:
+      group-id: listing-service
+      auto-offset-reset: earliest
+  mvc:
+    problemdetails:
+      enabled: false   # common-web provides the handler
+
+server:
+  port: ${LISTING_PORT:8083}
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+parksmart:
+  security:
+    jwt:
+      issuer: ${IDENTITY_ISSUER}
+      audience: parksmart-api
+      jwks-uri: ${IDENTITY_JWKS_URI}
+  listing:
+    min-price-per-hour: 5.00
+    max-price-per-hour: 2000.00
+    upload-url-ttl: 10m
+    max-photo-bytes: 10485760
+  storage:
+    endpoint: ${S3_ENDPOINT:}
+    region: ${S3_REGION:ap-south-1}
+    bucket: ${LISTING_PHOTOS_BUCKET}
+    public-base-url: ${LISTING_PHOTOS_PUBLIC_BASE_URL}
+    path-style-access: ${S3_PATH_STYLE_ACCESS:false}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    create-bucket: false
+  kafka:
+    partitions: 3
+    replication-factor: 1

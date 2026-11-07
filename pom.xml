@@ -26,6 +26,7 @@
     <module>services/identity</module>
     <module>services/gateway</module>
     <module>services/profile</module>
+    <module>services/listing</module>
     <!-- services/<name> modules are added by /new-service -->
   </modules>
 
