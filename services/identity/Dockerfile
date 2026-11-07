@@ -6,7 +6,7 @@ WORKDIR /src
 COPY pom.xml ./
 COPY shared ./shared
 COPY tools ./tools
-COPY services/identity ./services/identity
+COPY services ./services
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -q -pl services/identity -am package -DskipTests -Dspotless.check.skip=true \
  && java -Djarmode=tools -jar services/identity/target/identity-service-*.jar extract --layers --launcher --destination /extracted
