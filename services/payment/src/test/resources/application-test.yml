@@ -1,0 +1,24 @@
+# Testcontainers supply the real connection details via @ServiceConnection; these placeholders
+# only satisfy the required environment variables of application.yml.
+PAYMENT_DB_URL: jdbc:postgresql://overridden-by-testcontainers/payment
+PAYMENT_DB_USER: test
+PAYMENT_DB_PASSWORD: test
+KAFKA_BOOTSTRAP_SERVERS: overridden-by-testcontainers:9092
+IDENTITY_ISSUER: https://identity.parksmart.test
+IDENTITY_JWKS_URI: http://localhost:1/unused-tests-provide-a-decoder
+
+parksmart:
+  payment:
+    payouts:
+      enabled: false   # tests run the payout job directly
+  outbox:
+    relay:
+      enabled: false   # tests read the outbox table directly; OutboxRelayIT turns it on
+  kafka:
+    consumer:
+      max-attempts: 2
+
+logging:
+  structured:
+    format:
+      console: ""
