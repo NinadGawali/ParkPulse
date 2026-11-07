@@ -2,7 +2,7 @@
 
 A parking marketplace (Airbnb-for-parking): hosts list private parking spaces; drivers search, book, pay, park, and review. Built as Spring Boot microservices in a Maven monorepo. (Repository name: ParkPulse.)
 
-**Status:** Phases 0–4 done (bootstrap, contracts, Gateway + Identity, Profile, Listing). See [docs/PROGRESS.md](docs/PROGRESS.md).
+**Status:** Phases 0–5 done (bootstrap, contracts, Gateway + Identity, Profile, Listing, Booking). See [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Design docs
 - [Services & Entities](docs/ParkSmart-Services-and-Entities.md): authoritative service boundaries, entities, schema
@@ -52,6 +52,7 @@ java -jar services/<name>/target/<name>-service-0.1.0-SNAPSHOT.jar --spring.prof
 |---|---|---|
 | gateway | 8080 | Single entry point: routing, edge JWT check, Redis rate limits, correlation IDs; blocks `/internal/**` |
 | identity | 8081 | Accounts, login, refresh-token rotation, email/phone verification, roles, JWKS. Locally, verification codes are logged ("DEV ONLY") until Notification exists |
+| booking | 8084 | Bookings: idempotent create (holds the slot; a Postgres exclusion constraint makes overlaps impossible), the payment saga (PaymentAuthorized → CONFIRMED or host approval), cancellations with policy refunds, check-in/out, and timers for payment expiry, host deadline, no-show and completion |
 | listing | 8083 | Listings (DRAFT → review → PUBLISHED ↔ PAUSED, ARCHIVED), photos, weekly availability and blackouts, admin moderation, and the internal booking quote. Tracks host eligibility (verified phone, profile photo, suspension) and active bookings from events |
 | profile | 8082 | Profiles and presigned photo uploads, vehicles, host payout accounts, notification preferences. Consumes `AccountRegistered` and driver ratings; publishes `ProfileUpdated`, `VehicleAdded`, `VehicleRemoved` |
 

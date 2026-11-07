@@ -52,7 +52,7 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 | `tools/contract-validation` | Build gate: OpenAPI contracts parse and follow conventions | done |
 | `services/profile` (:8082) | Profiles, photos, vehicles, payout tokens, notification prefs (JPA reference) | done |
 | `services/listing` (:8083) | Listings, photos, availability, moderation, host-eligibility and active-booking projections, booking quote | done |
-| `services/booking` | Booking state machine, exclusion constraint, saga | planned (phase 5) |
+| `services/booking` (:8084) | Booking state machine, exclusion constraint, idempotent create, saga + timers (JdbcClient, no JPA) | done |
 | `services/payment` | Intents, ledger, commission rules, payouts | planned (phase 6) |
 | `services/search` | Event-built geo search projection | planned (phase 7) |
 | `services/notification` | Email/in-app delivery, templates | planned (phase 8) |

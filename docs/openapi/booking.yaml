@@ -31,7 +31,17 @@ info:
     total = pricePerHour x hours (HALF_UP, 2 dp). Price, cancellation policy, buffer, instantBook,
     and hostAccountId are snapshotted from Listing at creation.
 
-    **Idempotency**: `Idempotency-Key` is required on create. Same key + same body by the same
+    **Withdrawn listings**: on `ListingArchived`, bookings that have not started end (PENDING_PAYMENT
+    -> EXPIRED, AWAITING_HOST_APPROVAL/CONFIRMED -> CANCELLED_BY_HOST with a 100% refund). Bookings
+    of a paused listing are honoured.
+
+    **Events** (topic `booking.booking.v1`, keyed by booking): BookingRequested,
+    BookingAwaitingHostApproval, BookingConfirmed (carries `blockedUntil` = end + buffer),
+    BookingDeclined, BookingCancelled (with `refundAmount`), BookingExpired (with `fromStatus`),
+    BookingCheckedIn, BookingCompleted (with `reviewWindowEndsAt` = completion + 14 days),
+    BookingNoShow. PAYMENT_FAILED has no booking event: Payment's PaymentCaptureFailed is the signal.
+
+    **Idempotency**: `Idempotency-Key` is required on create (missing or malformed: 400). Same key + same body by the same
     driver returns the original booking (200). Same key with a different body returns 422
     `idempotency-key-reused`.
 servers:
@@ -49,7 +59,8 @@ paths:
         DRIVER only. Holds the slot and starts the payment saga (BookingRequested).
         422 problem types: `listing-not-bookable` (with the quote's unbookableReason),
         `cannot-book-own-listing` (driver is the listing's host), `invalid-booking-window`,
-        `idempotency-key-reused`. 409 `booking-overlap`.
+        `idempotency-key-reused`. 409 `booking-overlap`. 404 unknown or non-public listing.
+        503 `listing-unavailable` when Listing cannot be reached (2 s timeout, one retry).
       parameters:
         - name: Idempotency-Key
           in: header
@@ -75,6 +86,10 @@ paths:
         '409': { $ref: 'common.yaml#/components/responses/Conflict' }
         '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
         '429': { $ref: 'common.yaml#/components/responses/TooManyRequests' }
+        '503':
+          description: Listing Service unreachable (`listing-unavailable`).
+          content:
+            application/problem+json: { schema: { $ref: 'common.yaml#/components/schemas/Problem' } }
     get:
       tags: [bookings]
       operationId: listBookings
@@ -162,7 +177,7 @@ paths:
     post:
       tags: [bookings]
       operationId: checkIn
-      description: Driver only. CONFIRMED -> CHECKED_IN, allowed from start - 15 min until start + 30 min.
+      description: Driver only. CONFIRMED -> CHECKED_IN, allowed from start - 15 min until start + 30 min (409 `check-in-window` otherwise).
       responses:
         '200': { description: Checked in., content: { application/json: { schema: { $ref: '#/components/schemas/BookingResponse' } } } }
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
