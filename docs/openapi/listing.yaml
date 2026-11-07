@@ -197,6 +197,7 @@ paths:
     delete:
       tags: [photos]
       operationId: deletePhoto
+      description: Owner only (non-owner 403). 409 if it is the last READY photo of a PUBLISHED or PENDING_REVIEW listing.
       responses:
         '204': { description: Deleted. }
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
@@ -208,6 +209,7 @@ paths:
     put:
       tags: [photos]
       operationId: reorderPhotos
+      description: Owner only (non-owner 403). photoIds must list every READY photo exactly once.
       requestBody:
         required: true
         content:
@@ -271,6 +273,7 @@ paths:
     delete:
       tags: [availability]
       operationId: deleteBlackout
+      description: Owner only (non-owner 403).
       responses:
         '204': { description: Removed. }
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
@@ -336,6 +339,8 @@ paths:
       operationId: getBookingQuote
       description: |
         Called by Booking Service while creating a booking. Not routed by the gateway.
+        Requires a JWT with DRIVER (Booking forwards the driver's token); otherwise 403.
+        Booking itself rejects a driver booking their own listing (hostAccountId == caller).
         Returns the terms Booking snapshots and whether the window fits the listing's availability
         rules and blackouts. Booking still enforces overlap with other bookings in its own DB.
       parameters:
@@ -345,6 +350,7 @@ paths:
         '200': { description: Quote., content: { application/json: { schema: { $ref: '#/components/schemas/BookingQuote' } } } }
         '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
         '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
 components:
   securitySchemes:

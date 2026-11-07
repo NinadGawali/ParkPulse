@@ -29,7 +29,7 @@ All public calls go through the gateway at `http://localhost:8080` with `Authori
 
 | # | Actor | Call | Effect / events |
 |---|---|---|---|
-| 1 | Host user | `POST /api/v1/auth/register` | Account PENDING_VERIFICATION, role DRIVER. `AccountRegistered` (→ Profile creates empty profile, → Notification). `VerificationCodeIssued{EMAIL_VERIFY}` on the delivery topic |
+| 1 | Host user | `POST /api/v1/auth/register` | Account PENDING_VERIFICATION, role DRIVER. `AccountRegistered` (→ Profile creates empty profile). On `identity.private.v1` only: `ContactDetailsChanged` and `VerificationCodeIssued{EMAIL_VERIFY}` (→ Notification) |
 | 2 | Host | `POST /api/v1/auth/login` | Tokens |
 | 3 | Host | `POST /api/v1/auth/email/verify {code}` | ACTIVE. `EmailVerified` |
 | 4 | Host | `POST /api/v1/accounts/me/roles/host` then `POST /api/v1/auth/refresh` | `RoleGranted{HOST}`; new JWT carries HOST |
@@ -58,17 +58,45 @@ Failure paths that must also work in the slice tests: `fake_decline` → `Paymen
 request → 409 `booking-overlap`; host decline → DECLINED_BY_HOST → `PaymentVoided`; driver cancel
 after capture → `BookingCancelled{refundAmount}` → `PaymentRefunded`.
 
+More failure paths: capture rejected → `PaymentCaptureFailed` → PAYMENT_FAILED (slot freed);
+driver cancels a CONFIRMED MODERATE booking 2h before start → refundAmount = 50% → Payment
+refunds 50% (or, if the capture had not happened yet, captures then refunds 50%) — never a full void.
+
+### Host eligibility projection (Listing)
+| Event | Effect on `host_eligibility` / listings |
+|---|---|
+| `PhoneVerified` | `phone_verified = true` |
+| `PhoneUnverified` | `phone_verified = false` (existing listings stay as they are; next submit fails) |
+| `ProfileUpdated` | `has_profile_photo = hasPhoto` |
+| `AccountSuspended` | `suspended = true`; all the host's PUBLISHED listings → PAUSED (`ListingPaused`) |
+`submit` re-checks the projection at submit time; a missing row means "not eligible".
+
+### Private identity topic
+`identity.private.v1` carries `VerificationCodeIssued` (codes, reset tokens) and
+`ContactDetailsChanged` (email, verified phone). Rules: consumed only by Notification; 24h
+retention for the topic and its `.DLT`; payloads are never logged; Identity deletes outbox rows of
+these types right after publish; `verification_tokens` stores only a hash of the code. All other
+topics carry IDs only, no contact details.
+
 ### Saga races and how they resolve
-- **Authorize vs. expiry**: Payment voids an intent whenever it sees `BookingExpired`/`BookingDeclined`/`BookingCancelled`, in either order. If `authorize` arrives after the void, it returns 409. If `PaymentAuthorized` reaches Booking after expiry, Booking ignores it (the matching expiry event already makes Payment void).
+- **Authorize vs. expiry**: the intent stores `payment_due_by`, so `authorize` after the deadline returns 409 without charging. Payment also voids on `BookingExpired`/`BookingDeclined`, in either order. If `PaymentAuthorized` reaches Booking after expiry, Booking ignores it (the expiry event already makes Payment void).
+- **Cancel vs. capture**: `BookingCancelled.refundAmount` decides the money: full → void (if not captured) or full refund; partial → capture (if needed) then refund. Payment never voids a partial refund.
+- **Host approve vs. expiry job**: conditional updates on `(status, version)`; one wins, the other is a 409 or a no-op.
 - **Duplicate events**: every consumer records `eventId` in `processed_events` inside the same transaction as its state change.
 - **Lost publish**: all events go through the transactional outbox; a relay publishes rows and marks them sent (at-least-once).
 
 ## 3. Schema changes relative to Services-and-Entities §5
 These are additions needed by the decisions above. Each is a decisions-log entry in PROGRESS.md.
 
+**Contract-level changes vs. the docs**
+- Envelope adds `producer`. New events not in the docs: `PhoneUnverified`, `ContactDetailsChanged`, `VerificationCodeIssued`, `BookingAwaitingHostApproval`, `PaymentCaptureFailed`, `PaymentVoided`, `RatingAggregateUpdated`, `ListingSubmittedForReview`, `ListingRejected`. New topic `identity.private.v1`.
+- `AccountRegistered` and `PhoneVerified` carry no email/phone (PII only on the private topic).
+- No `CreatePaymentIntentRequest` endpoint (Services doc §3.6): intents are created from `BookingRequested`, never by clients or by a Booking→Payment call.
+- Booking status adds `AWAITING_HOST_APPROVAL`, `DECLINED_BY_HOST`, `PAYMENT_FAILED`; payment status adds `VOIDED`.
+
 **Identity**
 - `accounts`: add `email_verified_at`, `phone_verified_at`. Phone uniqueness only among verified phones.
-- `verification_tokens`: add `attempts INT` (lock after 5), `destination VARCHAR(255)` (phone being verified).
+- `verification_tokens`: add `attempts INT` (lock after 5), `destination VARCHAR(255)` (phone being verified); `token_hash` holds a hash of the code, never the code.
 - `outbox_events` table (shared shape below).
 
 **Listing**
@@ -76,7 +104,7 @@ These are additions needed by the decisions above. Each is a decisions-log entry
 - `listing_amenities (listing_id, amenity)` PK both columns.
 - `listing_photos`: add `object_key`, `content_type`, `content_length`, `status (PENDING_UPLOAD|READY)`, `created_at`.
 - `availability_rules.day_of_week` stored as ISO 1–7; `end_time` allows 24:00 (stored as `end_minute SMALLINT 1..1440` instead of TIME).
-- Projections: `host_eligibility (host_account_id PK, phone_verified, has_profile_photo, updated_at)`; `listing_active_bookings (booking_id PK, listing_id, blocked_until)`.
+- Projections: `host_eligibility (host_account_id PK, phone_verified, has_profile_photo, suspended, updated_at)`; `listing_active_bookings (booking_id PK, listing_id, blocked_until)`.
 - `outbox_events`, `processed_events`.
 
 **Booking**
@@ -86,7 +114,8 @@ These are additions needed by the decisions above. Each is a decisions-log entry
 - `outbox_events`, `processed_events`.
 
 **Payment**
-- `payment_intents`: add `driver_account_id`, `host_account_id`, `refunded_amount`, `failure_code`, `updated_at`, `version`; status adds `VOIDED`; `UNIQUE (booking_id)` (one intent per booking).
+- `payment_intents`: add `driver_account_id`, `host_account_id`, `payment_due_by`, `refunded_amount`, `failure_code`, `updated_at`, `version`; status adds `VOIDED`; `UNIQUE (booking_id)` (one intent per booking).
+- `idempotency_keys` gets `request_hash` (same rule as Booking: same key + different body → 422).
 - `ledger_entries`: add `account_type (DRIVER|HOST|PLATFORM)`, `payout_id` (null until paid out).
 - `commission_rules`: seed 15% effective from 2026-01-01.
 - `idempotency_keys (key, scope, response_hash, created_at)` for authorize/refund.

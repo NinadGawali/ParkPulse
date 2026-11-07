@@ -16,6 +16,12 @@ info:
       | (cancel) CANCELLED_BY_DRIVER / CANCELLED_BY_HOST
     - AWAITING_HOST_APPROVAL -> (driver cancel) CANCELLED_BY_DRIVER (100% refund / void)
     - CHECKED_IN -> (check-out, or end time reached) COMPLETED
+    - CONFIRMED -> (PaymentCaptureFailed) PAYMENT_FAILED (slot freed, both parties notified)
+
+    **Concurrency between actors**: every transition is a conditional update
+    (`UPDATE ... WHERE id = ? AND status = ? AND version = ?`). If a host approval races the
+    expiry job, exactly one wins; the loser gets 409 `illegal-booking-transition` (API) or is a
+    no-op (job). Late events (e.g. PaymentAuthorized after EXPIRED) are recorded and ignored.
 
     **No double booking**: Postgres exclusion constraint on `(listing_id, blocked_range)` for
     statuses PENDING_PAYMENT, AWAITING_HOST_APPROVAL, CONFIRMED, CHECKED_IN, where
@@ -39,7 +45,11 @@ paths:
     post:
       tags: [bookings]
       operationId: createBooking
-      description: DRIVER only. Holds the slot and starts the payment saga (BookingRequested).
+      description: |
+        DRIVER only. Holds the slot and starts the payment saga (BookingRequested).
+        422 problem types: `listing-not-bookable` (with the quote's unbookableReason),
+        `cannot-book-own-listing` (driver is the listing's host), `invalid-booking-window`,
+        `idempotency-key-reused`. 409 `booking-overlap`.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -183,7 +193,7 @@ components:
   schemas:
     BookingStatus:
       type: string
-      enum: [PENDING_PAYMENT, AWAITING_HOST_APPROVAL, CONFIRMED, CHECKED_IN, COMPLETED, CANCELLED_BY_DRIVER, CANCELLED_BY_HOST, DECLINED_BY_HOST, NO_SHOW, EXPIRED]
+      enum: [PENDING_PAYMENT, AWAITING_HOST_APPROVAL, CONFIRMED, CHECKED_IN, COMPLETED, CANCELLED_BY_DRIVER, CANCELLED_BY_HOST, DECLINED_BY_HOST, NO_SHOW, EXPIRED, PAYMENT_FAILED]
     CreateBookingRequest:
       type: object
       required: [listingId, startTime, endTime]

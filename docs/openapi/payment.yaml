@@ -9,15 +9,26 @@ info:
     (`FakeProcessor` now; Razorpay/Stripe adapter later).
 
     **Saga (driven by events, not called by Booking)**
-    - BookingRequested -> create PaymentIntent (CREATED) for the booking total
-    - driver calls `authorize` -> AUTHORIZED (emit PaymentAuthorized) or FAILED (emit PaymentFailed)
-    - BookingConfirmed -> capture -> CAPTURED (emit PaymentCaptured); ledger: driver DEBIT total,
+    - BookingRequested -> create PaymentIntent (CREATED) for the booking total, storing
+      driver/host IDs and `payment_due_by` (= BookingRequested.paymentDueBy)
+    - driver calls `authorize` -> AUTHORIZED (PaymentAuthorized) or FAILED (PaymentFailed).
+      After `payment_due_by` it returns 409 `payment-window-closed` without calling the processor.
+    - BookingConfirmed -> capture -> CAPTURED (PaymentCaptured); ledger: driver DEBIT total,
       host CREDIT total - commission, platform CREDIT commission (rate from `commission_rules`
-      effective at capture time; seed 15%)
-    - BookingDeclined / BookingExpired / BookingCancelled before capture -> void -> VOIDED (PaymentVoided)
-    - BookingCancelled after capture -> refund `refundAmount` from the event -> REFUNDED or
-      PARTIALLY_REFUNDED (PaymentRefunded) with reversing ledger entries
+      effective at capture time; seed 15%). If the processor rejects the capture ->
+      PaymentCaptureFailed; Booking moves CONFIRMED -> PAYMENT_FAILED and frees the slot.
+    - BookingDeclined / BookingExpired -> void an AUTHORIZED intent (PaymentVoided); a CREATED
+      intent becomes VOIDED too, so a later `authorize` returns 409.
+    - BookingCancelled (carries `refundAmount` computed by Booking from the policy snapshot):
+      - intent AUTHORIZED and refundAmount == amount -> void (PaymentVoided)
+      - intent AUTHORIZED and refundAmount < amount -> capture, then refund refundAmount
+      - intent CAPTURED -> refund refundAmount (REFUNDED or PARTIALLY_REFUNDED, PaymentRefunded)
+      - refundAmount == 0 on a CAPTURED intent -> no money movement, no event
+    - Refund ledger: reversing entries split pro rata, so the host share and the commission are
+      each reduced by refundAmount / amount (rounded HALF_UP to 2 dp; rounding remainder goes to
+      the platform entry so the entries always balance).
     - Weekly payout job sums each host's unpaid CREDIT entries -> Payout (PayoutCompleted/PayoutFailed)
+    - Events are consumed idempotently (processed_events), in bookingId order (Kafka key).
 
     **FakeProcessor tokens**: `fake_ok` authorizes, `fake_decline` fails with `card_declined`.
 servers:
@@ -49,7 +60,12 @@ paths:
     post:
       tags: [payments]
       operationId: authorizeIntent
-      description: Driver of the booking only. CREATED -> AUTHORIZED | FAILED. Idempotent per intent (a second call returns the current state).
+      description: |
+        Driver of the booking only. CREATED -> AUTHORIZED | FAILED.
+        Idempotency: the same Idempotency-Key with the same body returns the stored response; the
+        same key with a different body returns 422 `idempotency-key-reused`. A new key on an intent
+        that is no longer CREATED returns its current state and never calls the processor again.
+        409 `payment-window-closed` after the booking's payment deadline or once the intent is VOIDED.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -66,6 +82,7 @@ paths:
         '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
   /api/v1/hosts/me/payouts:
     get:
       tags: [payouts]

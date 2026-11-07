@@ -111,7 +111,7 @@ paths:
     post:
       tags: [auth]
       operationId: requestPhoneVerification
-      description: Set (or change) the caller's phone and send a 6-digit code by SMS.
+      description: Set (or change) the caller's phone and send a 6-digit code by SMS. Changing an already verified phone marks it unverified immediately (emits PhoneUnverified).
       requestBody:
         required: true
         content:
