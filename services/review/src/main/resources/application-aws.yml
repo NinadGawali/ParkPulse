@@ -1,0 +1,13 @@
+# AWS (ECS/EKS). All values are injected as environment variables from Secrets Manager / SSM:
+# REVIEW_DB_URL (must use sslmode=verify-full), REVIEW_DB_USER, REVIEW_DB_PASSWORD,
+# KAFKA_BOOTSTRAP_SERVERS (MSK, TLS listener), IDENTITY_ISSUER, IDENTITY_JWKS_URI,
+spring:
+  kafka:
+    # TLS to MSK. IAM/SASL auth is added with the Terraform phase (aws-msk-iam-auth).
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:SSL}
+
+parksmart:
+  require-db-tls: true
+  kafka:
+    replication-factor: 3
