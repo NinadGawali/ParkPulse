@@ -1,0 +1,8 @@
+# AWS (ECS/EKS). All values are injected as environment variables (Secrets Manager / SSM / task
+# definition): IDENTITY_ISSUER, IDENTITY_JWKS_URI, LISTING_URI, PROFILE_URI, BOOKING_URI,
+# PAYMENT_URI, REVIEW_URI (internal service-discovery names; the admin's bearer token travels to
+# them, so they must be HTTPS or inside the private network), optional ADMIN_BFF_DOWNSTREAM_TIMEOUT.
+# The BFF holds no credentials of its own, so nothing else differs from application.yml.
+parksmart:
+  downstream:
+    timeout: ${ADMIN_BFF_DOWNSTREAM_TIMEOUT:2s}
