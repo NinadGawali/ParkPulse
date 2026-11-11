@@ -118,6 +118,20 @@ spring:
               predicates:
                 - Path=/api/v1/notifications,/api/v1/notifications/**
               filters: *standard-limit
+            # Review submission: once per booking and direction, so a low per-account limit (~10/min).
+            - id: review-create
+              uri: ${REVIEW_URI}
+              order: -10
+              predicates:
+                - Path=/api/v1/reviews
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@principalOrIpKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 30
+                    redis-rate-limiter.requestedTokens: 3
             - id: review
               uri: ${REVIEW_URI}
               predicates:
