@@ -56,8 +56,8 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 | `services/payment` (:8085) | Intents (event-driven saga), FakeProcessor, double-entry ledger, commission rules, weekly payouts, admin refunds (JdbcClient) | done |
 | `services/search` (:8086) | Event-built geo search projection, PostGIS behind `ListingSearchIndex` (JdbcClient) | done |
 | `services/notification` (:8087) | Email/SMS/in-app delivery from events, templates, retries + dead letter, code redaction (JdbcClient) | done |
-| `services/review` | Reviews, eligibility projection, aggregates | planned (phase 9) |
-| `services/admin-bff` | Composed admin views, no entities | planned (phase 10) |
+| `services/review` | Reviews, eligibility projection, aggregates | done |
+| `services/admin-bff` | Composed admin views, no entities | done |
 | `infra/` | docker-compose for local infra | done |
 | `docs/` | Design docs, PROGRESS.md, openapi/, plans/ | ongoing |
 

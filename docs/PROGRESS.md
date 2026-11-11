@@ -12,7 +12,8 @@ Read at session start, update at session end. This file is the memory between se
 - **Phase 6 (Payment): done.** 10 unit + 17 integration tests (every saga path, idempotent authorize, ledger balance and pro-rata refunds, admin refunds, payouts incl. 4 concurrent runs paying once, Kafka in/out + DLT). Architect + security review: blockers on payout double-pay, random refund keys, refund-before-validation and an unguarded fake processor — all fixed (commit "make payouts and refunds crash- and retry-safe"). **Live saga verified through the gateway** across all six services: host publishes → driver books (replay = same booking; host self-booking 422) → intent CREATED → authorize `fake_ok` → booking CONFIRMED → payment CAPTURED → driver cancels 3 days ahead (MODERATE: 100%) → REFUNDED → host earnings 0.00.
 - **Phases 7 (Search) and 8 (Notification): done** (commits on `feat/review-service`'s ancestors; see module map).
 - **Phase 9 (Review): done.** 6 arch + 7 HTTP integration (both directions, 409 duplicate, 403 stranger and non-admin hide, 422 closed window, aggregates and outbox events, cursor paging) + 1 Kafka IT (BookingCompleted opens eligibility, redelivery harmless). Full `-pl services/review -am verify` green. Architect/security review done inline by the fork (no subagent run).
-- **Next: Phase 10 — Admin BFF.**
+- **Phase 10 (Admin BFF): done with gaps.** 20 unit/arch + 34 integration tests; full `./mvnw clean verify` green (15 modules, 459 tests). Gaps: Identity has no admin suspend endpoint; no service owns disputes; Payment has no payout hold or admin payout views; the review.yaml hide is now real (Review hides, Admin BFF composes). Gateway admin-bff route is narrowed to `/admin/v1/moderation/**,/admin/v1/bookings/**`.
+- **Next: Phase 11 — hardening (service-to-service auth, Kafka ACLs, CI).**
 
 ## Phase checklist
 - [x] 0. Bootstrap: Claude Code settings, commit-msg hook, CLAUDE.md, PROGRESS.md, subagents, slash commands, hooks, Maven skeleton, docker-compose
@@ -25,7 +26,7 @@ Read at session start, update at session end. This file is the memory between se
 - [x] 7. Search (event consumers, geo + filter + availability query, cursor pagination, lastUpdatedFromEventAt)
 - [x] 8. Notification (event consumers, SES-compatible email interface, in-app feed, templates, retries + DLQ)
 - [x] 9. Review (eligibility projection, both directions, aggregates → events → Search)
-- [ ] 10. Admin BFF (moderation queue, suspend account, disputes, payout hold)
+- [x] 10. Admin BFF (moderation queue, bookings view; suspend, disputes, payout hold pending owners)
 - [ ] 11. Hardening (security pass, booking load test, Micrometer + OpenTelemetry, CI pipeline)
 - [ ] 12. AWS (Terraform + deployment) — only on explicit go
 
