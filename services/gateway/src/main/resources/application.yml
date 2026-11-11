@@ -137,6 +137,20 @@ spring:
               predicates:
                 - Path=/api/v1/reviews,/api/v1/reviews/**,/admin/v1/reviews/**
               filters: *standard-limit
+            # Admin refunds move money: limited per account (~10 per minute).
+            - id: admin-bff-refund
+              uri: ${ADMIN_BFF_URI}
+              order: -10
+              predicates:
+                - Path=/admin/v1/bookings/*/refunds
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@principalOrIpKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 30
+                    redis-rate-limiter.requestedTokens: 3
             # Admin BFF: only the paths it owns (docs/openapi/admin-bff.yaml). Listing, payment and
             # review admin paths stay with their services above; any other /admin/v1 path is 404.
             - id: admin-bff
