@@ -35,3 +35,4 @@ logs/
 # Web test console
 web/node_modules/
 web/dist/
+web/*.tsbuildinfo
