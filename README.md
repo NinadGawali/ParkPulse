@@ -42,6 +42,41 @@ docker compose --env-file .env -f infra/docker-compose.yml down
 | RustFS (S3-compatible) | 9000 / 9001 | Local stand-in for S3; console on 9001 |
 | OpenSearch 2.19 | 9200 | Only with `--profile search` |
 
+## Running locally
+
+Windows, Git Bash, from the repo root. JDK 21+ is required; the scripts fall back to
+`C:\Program Files\Java\jdk-22` when the shell's `java` is older.
+
+```bash
+export JAVA_HOME="/c/Program Files/Java/jdk-22" PATH="/c/Program Files/Java/jdk-22/bin:$PATH"
+java -version                                  # must say 21 or newer
+bash infra/scripts/init-local-env.sh           # once: creates the root env file with random passwords
+./mvnw spotless:apply && ./mvnw clean package -DskipTests
+bash infra/scripts/infra-up.sh                 # Postgres, Kafka, Redis, S3; waits until healthy
+bash infra/scripts/run-local.sh                # 10 services in the background, waits for /actuator/health UP
+bash infra/scripts/smoke-test.sh               # end-to-end check through the gateway
+bash infra/scripts/stop-local.sh               # stop the services (docker keeps running)
+```
+
+Logs are in `logs/<service>.log` (gitignored), PIDs in `logs/pids`. `run-local.sh <name>...` starts only
+the named services.
+
+| Service | URL |
+|---|---|
+| Gateway (use this for all API calls) | http://localhost:8080 |
+| Identity / Profile / Listing / Booking | :8081 / :8082 / :8083 / :8084 |
+| Payment / Search / Notification / Review / Admin BFF | :8085 / :8086 / :8087 / :8088 / :8089 |
+| Health | `http://localhost:<port>/actuator/health` |
+| Object storage console | http://localhost:9001 |
+
+Notes:
+- Verification codes are logged by Notification (`logs/notification.log`, "DEV ONLY body"), not by Identity.
+- The gateway limits register/login per IP (5 logins burst, then one per 3 minutes). The smoke test
+  calls Identity on :8081 for register/login/verify so it can be repeated; everything else goes through :8080.
+- There is no public way to become ADMIN. The smoke test inserts an `ADMIN` row into the identity DB through
+  the postgres container (local only).
+- Not exercised by the smoke test: booking completion and reviews (the booking window must elapse).
+
 ## Services
 Run any service from the repo root with the `local` profile (reads `.env`):
 ```bash

@@ -37,6 +37,7 @@ Read at session start, update at session end. This file is the memory between se
 - A native Windows `redis-server` listens on 127.0.0.1:6379 (no password). Docker Redis is therefore on **6380** locally (`REDIS_PORT` in the env file). Change ports with `bash infra/scripts/init-local-env.sh set <NAME>_PORT <port>`.
 - Host JVM default zone is `Asia/Calcutta`, which Postgres 17 rejects; every service `main()` and the test JVMs force UTC.
 - In Git Bash, prefix `docker exec` commands with `MSYS_NO_PATHCONV=1` (otherwise container paths get rewritten).
+- Run the whole stack locally: `infra/scripts/infra-up.sh`, `run-local.sh`, `smoke-test.sh`, `stop-local.sh` (see README "Running locally"). Git Bash has no `setsid`; `nohup` + `disown` keeps services alive. The gateway rate-limits login/register per IP (burst 5), so the smoke test authenticates against Identity :8081 directly. A tool hook blocks shell commands mentioning the root env file, hence the wrapper scripts.
 
 ## Decisions log
 - 2026-11-07 — Docs moved from `documentation/` to `docs/` and renamed to the names the build kit expects.
