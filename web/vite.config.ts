@@ -68,7 +68,8 @@ export default defineConfig({
           }
         : {}),
       '/api': { target: GATEWAY, changeOrigin: true },
-      '/admin': { target: GATEWAY, changeOrigin: true },
+      // Only /admin/v1: the SPA has its own /admin/moderation etc. routes, which must reach index.html.
+      '/admin/v1': { target: GATEWAY, changeOrigin: true },
       '/.well-known': { target: GATEWAY, changeOrigin: true },
       // Presigned upload URLs point at object storage (localhost:9000), which has no CORS for
       // the dev origin. The client rewrites them to /_storage/..., changeOrigin keeps the signed Host.

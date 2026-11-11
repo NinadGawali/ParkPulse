@@ -59,6 +59,7 @@ If they disagree, Services-and-Entities wins; record the resolution in the PROGR
 | `services/review` | Reviews, eligibility projection, aggregates | done |
 | `services/admin-bff` | Composed admin views, no entities | done |
 | `infra/` | docker-compose for local infra | done |
+| `web/` | React + Vite manual test console, dev proxy to the gateway (local only) | done |
 | `docs/` | Design docs, PROGRESS.md, openapi/, plans/ | ongoing |
 
 New service: `/new-service <name>`. Verify: `/verify-service <name>`. Close a phase: `/phase-done <n>`.
