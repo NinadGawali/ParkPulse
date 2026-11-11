@@ -31,3 +31,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Web test console
+web/node_modules/
+web/dist/
