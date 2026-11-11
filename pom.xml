@@ -32,6 +32,7 @@
     <module>services/search</module>
     <module>services/notification</module>
     <module>services/review</module>
+    <module>services/admin-bff</module>
     <!-- services/<name> modules are added by /new-service -->
   </modules>
 

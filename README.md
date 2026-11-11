@@ -51,6 +51,7 @@ java -jar services/<name>/target/<name>-service-0.1.0-SNAPSHOT.jar --spring.prof
 | Service | Port | What it does |
 |---|---|---|
 | gateway | 8080 | Single entry point: routing, edge JWT check, Redis rate limits, correlation IDs; blocks `/internal/**` |
+| admin-bff | 8089 | ADMIN-only composed views, no data of its own: the listing moderation queue (with host profiles) and approve/reject, review hiding, and a booking case view (booking + payment + listing + both profiles) with manual refunds. Calls Listing, Profile, Booking, Payment and Review with the admin's own token (2 s timeouts); a failing secondary lookup marks the view `partial` instead of failing it. Owns `/admin/v1/moderation/**` and `/admin/v1/bookings/**` at the gateway |
 | identity | 8081 | Accounts, login, refresh-token rotation, email/phone verification, roles, JWKS |
 | notification | 8087 | Turns events into in-app notices and emails (and SMS for phone codes), honouring Profile's channel preferences; retries with backoff, dead-letters after 5 attempts, redacts one-time codes. Locally it "sends" by logging, and the log shows codes ("DEV ONLY") |
 | search | 8086 | Public geo search (radius, price, vehicle size, amenities, instant book, optional time window with weekly rules, blackouts and known bookings) over a projection built only from Listing, Booking, Payment and Review events |
@@ -59,7 +60,7 @@ java -jar services/<name>/target/<name>-service-0.1.0-SNAPSHOT.jar --spring.prof
 | listing | 8083 | Listings (DRAFT → review → PUBLISHED ↔ PAUSED, ARCHIVED), photos, weekly availability and blackouts, admin moderation, and the internal booking quote. Tracks host eligibility (verified phone, profile photo, suspension) and active bookings from events |
 | profile | 8082 | Profiles and presigned photo uploads, vehicles, host payout accounts, notification preferences. Consumes `AccountRegistered` and driver ratings; publishes `ProfileUpdated`, `VehicleAdded`, `VehicleRemoved` |
 
-Contracts: [identity](docs/openapi/identity.yaml), [profile](docs/openapi/profile.yaml), [search](docs/openapi/search.yaml), [listing](docs/openapi/listing.yaml), [booking](docs/openapi/booking.yaml), [payment](docs/openapi/payment.yaml).
+Contracts: [identity](docs/openapi/identity.yaml), [profile](docs/openapi/profile.yaml), [search](docs/openapi/search.yaml), [listing](docs/openapi/listing.yaml), [booking](docs/openapi/booking.yaml), [payment](docs/openapi/payment.yaml), [admin-bff](docs/openapi/admin-bff.yaml).
 
 ### Profile photo upload (through the gateway)
 1. `POST /api/v1/profiles/me/photo/upload-urls {"contentType":"image/png","contentLength":12345}` returns `uploadId`, a presigned `uploadUrl` (10 min) and `requiredHeaders`.

@@ -210,6 +210,28 @@ class GatewayIT {
   }
 
   @Test
+  void only_owned_admin_paths_are_routed() {
+    String admin = "Bearer " + token(KEY, ISSUER, List.of("ADMIN"));
+    for (String path :
+        List.of(
+            "/admin/v1/moderation/listings",
+            "/admin/v1/bookings/" + UUID.randomUUID(),
+            "/admin/v1/listings",
+            "/admin/v1/reviews/" + UUID.randomUUID() + "/hide")) {
+      client.get().uri(path).header("Authorization", admin).exchange().expectStatus().isOk();
+      assertThat(RECEIVED).containsKey(path);
+    }
+    client
+        .get()
+        .uri("/admin/v1/accounts/x/suspend")
+        .header("Authorization", admin)
+        .exchange()
+        .expectStatus()
+        .isNotFound();
+    assertThat(RECEIVED).doesNotContainKey("/admin/v1/accounts/x/suspend");
+  }
+
+  @Test
   void health_is_public() {
     client.get().uri("/actuator/health").exchange().expectStatus().isOk();
   }

@@ -1,0 +1,23 @@
+# Local development: the other services on their localhost ports (see CLAUDE.md).
+spring:
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../../.env[.properties]
+
+logging:
+  structured:
+    format:
+      console: ""   # human-readable logs locally
+
+parksmart:
+  security:
+    jwt:
+      issuer: ${IDENTITY_ISSUER:https://identity.parksmart.local}
+      jwks-uri: http://localhost:${IDENTITY_PORT:8081}/.well-known/jwks.json
+  downstream:
+    listing-url: ${LISTING_URI:http://localhost:8083}
+    profile-url: ${PROFILE_URI:http://localhost:8082}
+    booking-url: ${BOOKING_URI:http://localhost:8084}
+    payment-url: ${PAYMENT_URI:http://localhost:8085}
+    review-url: ${REVIEW_URI:http://localhost:8088}
