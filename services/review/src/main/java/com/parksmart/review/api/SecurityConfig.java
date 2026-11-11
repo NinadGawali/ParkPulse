@@ -8,8 +8,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Every call needs a valid access token except reading a single listing (published listings are
- * public). Roles and ownership are checked in the application layer.
+ * Every call needs a valid access token except listing reviews and reading a rating summary
+ * (public). Roles and ownership are checked in the application layer.
  */
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {

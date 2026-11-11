@@ -85,6 +85,17 @@ class ReviewIT extends IntegrationTest {
   }
 
   @Test
+  void driver_reviews_need_a_signed_in_caller() throws Exception {
+    UUID driverId = UUID.randomUUID();
+    get("/api/v1/reviews?targetType=DRIVER&targetId=" + driverId, null)
+        .andExpect(status().isUnauthorized());
+    get("/api/v1/reviews/summary?targetType=DRIVER&targetId=" + driverId, null)
+        .andExpect(status().isUnauthorized());
+    get("/api/v1/reviews?targetType=DRIVER&targetId=" + driverId, host())
+        .andExpect(status().isOk());
+  }
+
+  @Test
   void a_closed_window_is_422() throws Exception {
     Booking b = completedBooking(Instant.now().minus(1, ChronoUnit.HOURS));
     postJson("/api/v1/reviews", Map.of("bookingId", b.id(), "rating", 5), b.driver())

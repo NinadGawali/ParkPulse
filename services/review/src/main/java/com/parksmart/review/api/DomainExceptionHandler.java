@@ -20,8 +20,7 @@ class DomainExceptionHandler {
       Map.of(
           "review-exists", "Already reviewed",
           "review-window-closed", "Review window closed",
-          "invalid-rating", "Invalid rating",
-          "invalid-target", "Invalid target");
+          "invalid-rating", "Invalid rating");
 
   @ExceptionHandler(DomainException.class)
   ResponseEntity<ProblemDetail> handle(DomainException ex) {

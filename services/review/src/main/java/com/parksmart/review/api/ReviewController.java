@@ -78,14 +78,23 @@ class ReviewController {
       @RequestParam UUID targetId,
       @RequestParam(required = false) String cursor,
       @RequestParam(required = false) Integer limit) {
+    requireLoginForDriverTarget(targetType);
     return reviews.published(targetType, targetId, cursor, limit).map(ReviewResponse::of);
   }
 
   @GetMapping("/api/v1/reviews/summary")
   SummaryResponse summary(@RequestParam TargetType targetType, @RequestParam UUID targetId) {
+    requireLoginForDriverTarget(targetType);
     Aggregate a = reviews.summary(targetType, targetId);
     return new SummaryResponse(
         targetType.name(), targetId, a.avg() == null ? null : a.avg().toPlainString(), a.count());
+  }
+
+  /** Listing reviews are public; host-written comments about drivers need a signed-in caller. */
+  private static void requireLoginForDriverTarget(TargetType type) {
+    if (type == TargetType.DRIVER && CurrentAccount.find().isEmpty()) {
+      throw com.parksmart.common.web.ApiException.unauthorized("Sign in to read driver reviews");
+    }
   }
 
   @PostMapping("/admin/v1/reviews/{reviewId}/hide")

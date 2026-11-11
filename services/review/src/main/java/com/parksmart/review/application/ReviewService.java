@@ -27,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewService {
 
   static final String CONSUMER = "review-service";
+  private static final java.time.Duration REVIEW_WINDOW = java.time.Duration.ofDays(14);
+  private static final java.time.Duration MAX_CLOCK_SKEW = java.time.Duration.ofMinutes(5);
 
   private final ReviewRepository reviews;
   private final ProcessedEvents processed;
@@ -44,8 +46,26 @@ public class ReviewService {
   /** BookingCompleted: the booking becomes reviewable until its review window ends. */
   @Transactional
   public void bookingCompleted(UUID eventId, Eligibility eligibility, Instant completedAt) {
+    // Don't trust the event blindly: no self-reviews, no future completion, bounded window.
+    if (eligibility.driverAccountId().equals(eligibility.hostAccountId())) {
+      throw new DomainException("invalid-eligibility", "driver and host must differ");
+    }
+    Instant now = clock.instant();
+    if (completedAt.isAfter(now.plus(MAX_CLOCK_SKEW))) {
+      throw new DomainException("invalid-eligibility", "completedAt is in the future");
+    }
+    Instant latest = completedAt.plus(REVIEW_WINDOW);
+    Eligibility bounded =
+        eligibility.expiresAt().isAfter(latest)
+            ? new Eligibility(
+                eligibility.bookingId(),
+                eligibility.driverAccountId(),
+                eligibility.hostAccountId(),
+                eligibility.listingId(),
+                latest)
+            : eligibility;
     if (processed.markProcessed(eventId, CONSUMER)) {
-      reviews.saveEligibility(eligibility, completedAt);
+      reviews.saveEligibility(bounded, completedAt);
     }
   }
 
@@ -120,11 +140,5 @@ public class ReviewService {
   @Transactional(readOnly = true)
   public Aggregate summary(TargetType type, UUID targetId) {
     return reviews.aggregate(type, targetId);
-  }
-
-  static void requireKnown(String value) {
-    if (value == null) {
-      throw new DomainException("invalid-target", "targetType is required");
-    }
   }
 }

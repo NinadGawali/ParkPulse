@@ -47,7 +47,7 @@ paths:
       tags: [reviews]
       operationId: listReviews
       security: [{}, { bearerAuth: [] }]
-      description: Public. Published reviews of a listing or a driver, newest first.
+      description: Public for targetType LISTING; targetType DRIVER requires a bearer token (401 otherwise). Published reviews, newest first.
       parameters:
         - { name: targetType, in: query, required: true, schema: { type: string, enum: [LISTING, DRIVER] } }
         - { name: targetId, in: query, required: true, schema: { type: string, format: uuid } }
@@ -59,12 +59,13 @@ paths:
           content:
             application/json: { schema: { $ref: '#/components/schemas/ReviewPage' } }
         '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
   /api/v1/reviews/summary:
     get:
       tags: [reviews]
       operationId: ratingSummary
       security: [{}, { bearerAuth: [] }]
-      description: Public. Average and count of published reviews (avgRating null when none).
+      description: Public for targetType LISTING; targetType DRIVER requires a bearer token (401 otherwise). Average and count of published reviews (avgRating null when none).
       parameters:
         - { name: targetType, in: query, required: true, schema: { type: string, enum: [LISTING, DRIVER] } }
         - { name: targetId, in: query, required: true, schema: { type: string, format: uuid } }
@@ -74,6 +75,7 @@ paths:
           content:
             application/json: { schema: { $ref: '#/components/schemas/RatingSummary' } }
         '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
   /admin/v1/reviews/{reviewId}/hide:
     post:
       tags: [admin]
