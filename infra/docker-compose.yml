@@ -98,6 +98,26 @@ services:
     volumes:
       - opensearch-data:/usr/share/opensearch/data
 
+  # Production build of the web app (nginx). The services run on the host locally (infra/scripts/run-local.sh),
+  # so the gateway is reached through host.docker.internal. Start with: --profile web up -d --build web
+  web:
+    profiles: ["web"]
+    build:
+      context: ../web
+    image: parksmart/web:local
+    environment:
+      GATEWAY_URL: ${WEB_GATEWAY_URL:-http://host.docker.internal:8080}
+      STORAGE_URL: http://object-storage:9000
+      # Presigned upload URLs are signed for the host the services see (localhost:<S3_PORT>).
+      STORAGE_SIGNED_HOST: localhost:${S3_PORT:-9000}
+      MEDIA_ORIGINS: http://localhost:${S3_PORT:-9000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${WEB_PORT:-3000}:8080"
+    depends_on:
+      - object-storage
+
 volumes:
   postgres-data:
   kafka-data:

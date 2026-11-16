@@ -55,30 +55,35 @@ function devCodes(): Plugin {
   };
 }
 
+/** Same-origin proxy (the nginx image does the same in production): the gateway needs no CORS. */
+const proxy = {
+  // Auth endpoints straight to Identity (skips the gateway's per-IP login/register limits).
+  ...(AUTH_DIRECT
+    ? {
+        '/api/v1/auth': { target: IDENTITY, changeOrigin: true },
+      }
+    : {}),
+  '/api': { target: GATEWAY, changeOrigin: true },
+  // Only /admin/v1: the SPA has its own /admin pages, which must reach index.html.
+  '/admin/v1': { target: GATEWAY, changeOrigin: true },
+  '/.well-known': { target: GATEWAY, changeOrigin: true },
+  // Presigned upload URLs point at object storage (localhost:9000), which has no CORS for this origin.
+  // The client rewrites them to /_storage/..., changeOrigin keeps the signed Host.
+  '/_storage': {
+    target: STORAGE,
+    changeOrigin: true,
+    rewrite: (p: string) => p.replace(/^\/_storage/, ''),
+  },
+};
+
 export default defineConfig({
   plugins: [react(), devCodes()],
-  server: {
-    port: 5173,
-    strictPort: true,
-    proxy: {
-      // Auth endpoints straight to Identity (skips the gateway's per-IP login/register limits).
-      ...(AUTH_DIRECT
-        ? {
-            '/api/v1/auth': { target: IDENTITY, changeOrigin: true },
-          }
-        : {}),
-      '/api': { target: GATEWAY, changeOrigin: true },
-      // Only /admin/v1: the SPA has its own /admin/moderation etc. routes, which must reach index.html.
-      '/admin/v1': { target: GATEWAY, changeOrigin: true },
-      '/.well-known': { target: GATEWAY, changeOrigin: true },
-      // Presigned upload URLs point at object storage (localhost:9000), which has no CORS for
-      // the dev origin. The client rewrites them to /_storage/..., changeOrigin keeps the signed Host.
-      '/_storage': {
-        target: STORAGE,
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/_storage/, ''),
-      },
-    },
+  server: { port: 5173, strictPort: true, proxy },
+  // `npm run preview` serves the production bundle with the same proxy.
+  preview: { port: 4173, strictPort: true, proxy },
+  build: {
+    sourcemap: false,
+    chunkSizeWarningLimit: 600,
   },
   test: {
     environment: 'jsdom',
