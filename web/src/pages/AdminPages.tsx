@@ -1,81 +1,101 @@
 import { useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, useSearchParams } from 'react-router-dom';
 import { admin } from '../api/endpoints';
 import { newIdempotencyKey } from '../api/client';
+import type { BookingCase } from '../api/types';
+import { formatMoney, relativeTime } from '../lib';
+import { Icon } from '../components/Icon';
 import { usePaged } from '../components/paged';
-import { Badge, Card, Field, Json, LoadMore, Loading, Money, Notice, ProblemView, Time, useAction, useLoad } from '../components/ui';
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  DateRange,
+  Empty,
+  Field,
+  Loading,
+  LoadMore,
+  ProblemView,
+  RatingInline,
+  StatusBadge,
+  toast,
+  useAction,
+  useDocumentTitle,
+  useLoad,
+} from '../components/ui';
+
+function AdminShell({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
+  useDocumentTitle(`Admin · ${title}`);
+  return (
+    <div className="container page">
+      <div className="page-head">
+        <div>
+          <span className="eyebrow">ParkSmart admin</span>
+          <h1>{title}</h1>
+          <p className="sub">{sub}</p>
+        </div>
+      </div>
+      <div className="side-layout">
+        <nav className="side-nav" aria-label="Admin">
+          <NavLink to="/admin" end className={({ isActive }) => (isActive ? 'active' : '')}>
+            <Icon name="flag" /> Listing reviews
+          </NavLink>
+          <NavLink to="/admin/bookings" className={({ isActive }) => (isActive ? 'active' : '')}>
+            <Icon name="receipt" /> Bookings & refunds
+          </NavLink>
+          <NavLink to="/admin/reviews" className={({ isActive }) => (isActive ? 'active' : '')}>
+            <Icon name="star" /> Ratings & reviews
+          </NavLink>
+        </nav>
+        <div className="stack">{children}</div>
+      </div>
+    </div>
+  );
+}
 
 export function ModerationPage() {
   const q = usePaged((c) => admin.queue(c));
-  const act = useAction();
-  const [reason, setReason] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
   return (
-    <div className="stack">
-      <div className="row">
-        <h2>Listing moderation queue</h2>
-        <div className="grow" />
-        <button onClick={q.reload}>Refresh</button>
+    <AdminShell title="Listing reviews" sub="New and relocated listings waiting for approval, oldest first.">
+      <div className="row between">
+        <span className="muted small">{q.items.length} waiting</span>
+        <Button size="sm" icon="refresh" onClick={q.reload}>
+          Refresh
+        </Button>
       </div>
-      <Notice>
-        Oldest first, composed by the Admin BFF with each host's public profile. An admin cannot moderate their own listing (403). Reject needs a reason; the host sees it.
-      </Notice>
-      <Field label="Reason (required to reject, optional note for approve)">
-        <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
-      </Field>
-      {msg && <Notice kind="ok">{msg}</Notice>}
       <ProblemView error={q.error} />
-      <ProblemView error={act.error} />
-      {q.loading && q.items.length === 0 && <Loading />}
-      {!q.loading && q.items.length === 0 && !q.error && <p className="muted">Queue is empty.</p>}
-      <div className="cards">
-        {q.items.map((i) => (
-          <div key={i.listingId} className="listing-card">
-            {i.thumbnailUrl ? <img src={i.thumbnailUrl} alt="" /> : <div className="noimg">no photo</div>}
-            <div>
-              <strong>{i.title}</strong> <Badge value={i.status} />
-              {i.partial && <span className="bad-text"> partial view</span>}
-              <div>{i.address ?? '-'}</div>
-              <div>
-                <Money value={i.pricePerHour} currency={i.currency} />/h | photos {i.photoCount ?? '?'} | rules {i.availabilityRuleCount ?? '?'} | changed <Time value={i.lastChangedAt} />
+      {q.loading && q.items.length === 0 ? (
+        <Loading />
+      ) : q.items.length === 0 && !q.error ? (
+        <Empty icon="checkCircle" title="All caught up">
+          No listings are waiting for review.
+        </Empty>
+      ) : (
+        <div className="list-cards">
+          {q.items.map((i) => (
+            <Link key={i.listingId} to={`/listings/${i.listingId}`} className="card row-card">
+              <div className="thumb">{i.thumbnailUrl ? <img src={i.thumbnailUrl} alt="" /> : <div className="noimg"><Icon name="image" /></div>}</div>
+              <div className="body">
+                <span className="title">{i.title}</span>
+                <span className="small muted">{i.address ?? '–'}</span>
+                <span className="small">
+                  {formatMoney(i.pricePerHour, i.currency)}/h · {i.photoCount ?? '?'} photos · {i.availabilityRuleCount ?? '?'} opening-hour rules
+                  {i.lastChangedAt ? ` · submitted ${relativeTime(i.lastChangedAt, Date.now())}` : ''}
+                </span>
+                <span className="row small">
+                  <Avatar name={i.host?.displayName} url={i.host?.photoUrl} size={22} /> {i.host?.displayName ?? 'Host'}
+                  {i.host && <RatingInline avg={i.host.ratingAvg} count={i.host.ratingCount} />}
+                  {i.partial && <span className="warn-text">some details unavailable</span>}
+                </span>
               </div>
-              <div className="muted">
-                Host: {i.host?.displayName ?? '(no name)'} rating {i.host?.ratingAvg ?? '-'} ({i.host?.ratingCount ?? 0}) <code>{i.hostAccountId?.slice(0, 8)}</code>
-              </div>
-              <code className="muted">{i.listingId}</code>
-              <div className="row">
-                <button
-                  disabled={act.busy}
-                  onClick={async () => {
-                    const r = await act.run(() => admin.approve(i.listingId, reason || undefined));
-                    if (r) {
-                      setMsg(`Approved ${i.title}: ${r.status}`);
-                      q.reload();
-                    }
-                  }}
-                >
-                  Approve
-                </button>
-                <button
-                  disabled={act.busy || !reason}
-                  title={reason ? '' : 'Enter a reason first'}
-                  onClick={async () => {
-                    const r = await act.run(() => admin.reject(i.listingId, reason));
-                    if (r) {
-                      setMsg(`Rejected ${i.title}: ${r.status}`);
-                      q.reload();
-                    }
-                  }}
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+              <span className="btn btn-sm btn-primary">Review</span>
+            </Link>
+          ))}
+        </div>
+      )}
       <LoadMore cursor={q.next} onMore={q.more} busy={q.loading} />
-    </div>
+    </AdminShell>
   );
 }
 
@@ -84,171 +104,201 @@ export function AdminBookingPage() {
   const id = sp.get('id') ?? '';
   const [idIn, setIdIn] = useState(id);
   const c = useLoad(() => (id ? admin.bookingCase(id) : Promise.resolve(null)), [id]);
-  const [amount, setAmount] = useState('');
-  const [reason, setReason] = useState('Goodwill refund');
-  const act = useAction();
-  const lastKey = useRef<{ sig: string; key: string } | null>(null);
-  const [outcome, setOutcome] = useState<string | null>(null);
-
-  const refund = async () => {
-    const sig = `${id}|${amount}|${reason}`;
-    if (!lastKey.current || lastKey.current.sig !== sig) lastKey.current = { sig, key: newIdempotencyKey() };
-    const key = lastKey.current.key;
-    const r = await act.run(() => admin.refund(id, amount, reason, key));
-    if (r) {
-      setOutcome(`HTTP ${r.status}: intent ${r.data.status}, refunded ${r.data.refundedAmount} (Idempotency-Key ${key}; pressing again replays the stored result)`);
-      c.reload();
-    }
-  };
   const d = c.data;
   return (
-    <div className="stack">
-      <h2>Booking case</h2>
-      <Card>
-        <form
-          className="form inline"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setSp({ id: idIn.trim() });
-          }}
-        >
-          <Field label="Booking id">
-            <input value={idIn} onChange={(e) => setIdIn(e.target.value)} size={40} required />
-          </Field>
-          <button type="submit">Load case</button>
-        </form>
-      </Card>
+    <AdminShell title="Bookings & refunds" sub="Look up a booking to see its payment, the people involved, and issue a goodwill refund.">
+      <form
+        className="row nowrap"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setSp({ id: idIn.trim() });
+        }}
+      >
+        <input value={idIn} onChange={(e) => setIdIn(e.target.value)} placeholder="Booking ID" aria-label="Booking ID" required pattern="[0-9a-fA-F-]{36}" />
+        <Button type="submit" variant="primary" icon="search">
+          Look up
+        </Button>
+      </form>
       <ProblemView error={c.error} />
       {c.loading && id && !d && <Loading />}
-      {d && (
-        <>
-          {d.partial && <Notice kind="warn">Partial view: a secondary lookup (payment, listing or profiles) failed, so some parts are null.</Notice>}
-          <div className="grid2">
-            <Card title="Booking">
-              <p>
-                <Badge value={d.booking.status} /> <Money value={d.booking.totalAmount} currency={d.booking.currency} /> {d.booking.cancellationPolicy}
-              </p>
-              <p>
-                <Time value={d.booking.startTime} /> to <Time value={d.booking.endTime} />
-              </p>
-              {d.booking.refundAmount && (
-                <p>
-                  Refund recorded: <Money value={d.booking.refundAmount} currency={d.booking.currency} />
-                </p>
+      {d && <CaseView d={d} onChange={c.reload} />}
+    </AdminShell>
+  );
+}
+
+function CaseView({ d, onChange }: { d: BookingCase; onChange: () => void }) {
+  const b = d.booking;
+  return (
+    <>
+      {d.partial && <Alert kind="warn">Some details couldn't be loaded (a service didn't answer); what's shown is accurate.</Alert>}
+      <div className="grid-2">
+        <Card title="Booking">
+          <dl className="kv" style={{ gridTemplateColumns: '100px 1fr' }}>
+            <dt>Status</dt>
+            <dd>
+              <StatusBadge kind="booking" value={b.status} />
+            </dd>
+            <dt>When</dt>
+            <dd>
+              <DateRange start={b.startTime} end={b.endTime} />
+            </dd>
+            <dt>Total</dt>
+            <dd>{formatMoney(b.totalAmount, b.currency)}</dd>
+            <dt>Policy</dt>
+            <dd>{b.cancellationPolicy.toLowerCase()}</dd>
+            {b.refundAmount && (
+              <>
+                <dt>Refunded</dt>
+                <dd>{formatMoney(b.refundAmount, b.currency)}</dd>
+              </>
+            )}
+          </dl>
+        </Card>
+        <Card title="Payment">
+          {d.payment ? (
+            <dl className="kv" style={{ gridTemplateColumns: '100px 1fr' }}>
+              <dt>Status</dt>
+              <dd>
+                <StatusBadge kind="payment" value={d.payment.status} />
+              </dd>
+              <dt>Amount</dt>
+              <dd>{formatMoney(d.payment.amount, d.payment.currency)}</dd>
+              <dt>Refunded</dt>
+              <dd>{formatMoney(d.payment.refundedAmount, d.payment.currency)}</dd>
+              {d.payment.failureCode && (
+                <>
+                  <dt>Failure</dt>
+                  <dd>{d.payment.failureCode}</dd>
+                </>
               )}
-            </Card>
-            <Card title="Payment">
-              {d.payment ? (
-                <p>
-                  <Badge value={d.payment.status} /> amount <Money value={d.payment.amount} currency={d.payment.currency} /> refunded{' '}
-                  <Money value={d.payment.refundedAmount} currency={d.payment.currency} /> <code className="muted">{d.payment.intentId}</code>
-                </p>
-              ) : (
-                <p className="muted">No intent yet (or lookup failed).</p>
-              )}
-            </Card>
-            <Card title="Listing">{d.listing ? <p>{d.listing.title} <Badge value={d.listing.status} /> {d.listing.address}</p> : <p className="muted">-</p>}</Card>
-            <Card title="People">
-              <p>Driver: {d.driver?.displayName ?? '(no name)'} <code className="muted">{d.booking.driverAccountId.slice(0, 8)}</code></p>
-              <p>Host: {d.host?.displayName ?? '(no name)'} <code className="muted">{d.booking.hostAccountId.slice(0, 8)}</code></p>
-              <p className="muted">No contact data is returned by the BFF.</p>
-            </Card>
+            </dl>
+          ) : (
+            <p className="muted">No payment yet.</p>
+          )}
+        </Card>
+        <Card title="Listing">
+          {d.listing ? (
+            <div className="stack-xs">
+              <Link to={`/listings/${d.listing.listingId}`} className="strong">
+                {d.listing.title}
+              </Link>
+              <span className="small muted">{d.listing.address}</span>
+              <StatusBadge kind="listing" value={d.listing.status} />
+            </div>
+          ) : (
+            <p className="muted">–</p>
+          )}
+        </Card>
+        <Card title="People">
+          <div className="stack">
+            {[
+              { role: 'Driver', p: d.driver },
+              { role: 'Host', p: d.host },
+            ].map(({ role, p }) => (
+              <div key={role} className="row">
+                <Avatar name={p?.displayName} url={p?.photoUrl} size={34} />
+                <span>
+                  <span className="small muted">{role}</span>
+                  <br />
+                  <span className="strong">{p?.displayName ?? 'No name'}</span> <RatingInline avg={p?.ratingAvg} count={p?.ratingCount ?? 0} />
+                </span>
+              </div>
+            ))}
           </div>
-          <Card title="Manual refund (admin, Idempotency-Key)">
-            <p className="muted">Only for CAPTURED or PARTIALLY_REFUNDED intents, up to the remaining captured amount (422 refund-exceeds-captured, 409 otherwise).</p>
-            <form
-              className="form inline"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void refund();
-              }}
-            >
-              <Field label="Amount (INR)">
-                <input value={amount} onChange={(e) => setAmount(e.target.value)} required pattern="\d{1,8}(\.\d{1,2})?" placeholder="10.00" />
-              </Field>
-              <Field label="Reason">
-                <input value={reason} onChange={(e) => setReason(e.target.value)} required maxLength={255} />
-              </Field>
-              <button type="submit" disabled={act.busy}>
-                Refund
-              </button>
-            </form>
-            {outcome && <Notice kind="ok">{outcome}</Notice>}
-            <ProblemView error={act.error} />
-          </Card>
-          <details>
-            <summary>Raw case JSON</summary>
-            <Json value={d} />
-          </details>
-        </>
+        </Card>
+      </div>
+      <RefundCard d={d} onChange={onChange} />
+    </>
+  );
+}
+
+function RefundCard({ d, onChange }: { d: BookingCase; onChange: () => void }) {
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const act = useAction();
+  const lastKey = useRef<{ sig: string; key: string } | null>(null);
+  const p = d.payment;
+  const refundable = p && ['CAPTURED', 'PARTIALLY_REFUNDED'].includes(p.status);
+  const remaining = p ? (Number(p.amount) - Number(p.refundedAmount)).toFixed(2) : '0';
+  return (
+    <Card title="Goodwill refund">
+      {!refundable ? (
+        <p className="muted">Refunds are possible once a payment has been captured. Current payment status: {p?.status.toLowerCase() ?? 'none'}.</p>
+      ) : (
+        <form
+          className="form"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!confirm(`Refund ${formatMoney(amount)} to the driver?`)) return;
+            const sig = `${d.booking.bookingId}|${amount}|${reason}`;
+            // The same refund retried (double click, timeout) replays instead of refunding twice.
+            if (!lastKey.current || lastKey.current.sig !== sig) lastKey.current = { sig, key: newIdempotencyKey() };
+            const r = await act.run(() => admin.refund(d.booking.bookingId, Number(amount).toFixed(2), reason.trim(), lastKey.current!.key));
+            if (r) {
+              toast(`Refunded. Total refunded: ${formatMoney(r.data.refundedAmount)}`);
+              setAmount('');
+              setReason('');
+              lastKey.current = null;
+              onChange();
+            }
+          }}
+        >
+          <div className="grid-2">
+            <Field label="Amount" id="refund-amount" hint={`Up to ${formatMoney(remaining)} remaining.`}>
+              <div className="input-group">
+                <span className="addon">₹</span>
+                <input id="refund-amount" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))} required inputMode="decimal" />
+              </div>
+            </Field>
+            <Field label="Reason (shared with the driver)">
+              <input value={reason} onChange={(e) => setReason(e.target.value)} required minLength={3} maxLength={255} />
+            </Field>
+          </div>
+          <ProblemView error={act.error} compact />
+          <div className="form-actions">
+            <Button type="submit" variant="danger" className="solid" busy={act.busy} disabled={!amount || Number(amount) <= 0 || Number(amount) > Number(remaining)}>
+              Issue refund
+            </Button>
+          </div>
+        </form>
       )}
-    </div>
+    </Card>
   );
 }
 
 export function AdminReviewsPage() {
   const [id, setId] = useState('');
-  const [reason, setReason] = useState('Violates guidelines');
+  const [reason, setReason] = useState('');
   const act = useAction();
-  const [out, setOut] = useState<string | null>(null);
   return (
-    <div className="stack">
-      <h2>Hide a review</h2>
-      <Notice>
-        Find review ids on the <Link to="/reviews">Reviews</Link> page. Hiding is idempotent and recomputes the rating aggregate.
-      </Notice>
-      <Card>
+    <AdminShell title="Ratings & reviews" sub="Hide reviews that break the guidelines. You can also hide a review straight from a listing page.">
+      <Card title="Hide a review by ID">
         <form
           className="form"
           onSubmit={async (e) => {
             e.preventDefault();
-            const r = await act.run(() => admin.hideReview(id.trim(), reason));
-            if (r) setOut(`Hidden: review ${r.reviewId}`);
+            const r = await act.run(() => admin.hideReview(id.trim(), reason.trim()));
+            if (r) {
+              toast('Review hidden; the rating was recalculated.');
+              setId('');
+              setReason('');
+            }
           }}
         >
-          <Field label="Review id">
-            <input value={id} onChange={(e) => setId(e.target.value)} required size={40} />
+          <Field label="Review ID">
+            <input value={id} onChange={(e) => setId(e.target.value)} required pattern="[0-9a-fA-F-]{36}" />
           </Field>
-          <Field label="Reason">
-            <input value={reason} onChange={(e) => setReason(e.target.value)} required maxLength={255} />
+          <Field label="Reason (kept in the audit log)">
+            <input value={reason} onChange={(e) => setReason(e.target.value)} required minLength={3} maxLength={255} />
           </Field>
-          <button type="submit" disabled={act.busy}>
-            Hide review
-          </button>
+          <ProblemView error={act.error} compact />
+          <div className="form-actions">
+            <Button type="submit" variant="danger" className="solid" busy={act.busy}>
+              Hide review
+            </Button>
+          </div>
         </form>
-        {out && <Notice kind="ok">{out}</Notice>}
-        <ProblemView error={act.error} />
       </Card>
-    </div>
-  );
-}
-
-export function NotImplementedPage() {
-  return (
-    <div className="stack">
-      <h2>Not implemented in the backend</h2>
-      <Notice kind="warn">
-        These admin capabilities have no endpoints yet (docs/PROGRESS.md, phase 10 gaps), so the console cannot offer them. They are not hidden failures.
-      </Notice>
-      <Card>
-        <ul>
-          <li>
-            <strong>Account suspension / reinstatement</strong>: Identity has no admin suspend endpoint, and there is no AccountReinstated event.
-          </li>
-          <li>
-            <strong>Disputes</strong>: no service owns a dispute table; manual refunds on the booking case are the only dispute tool.
-          </li>
-          <li>
-            <strong>Payout holds and admin payout views</strong>: Payment has no hold endpoint; the Payout status ON_HOLD exists but nothing sets it.
-          </li>
-          <li>
-            <strong>Public booking quote</strong>: the quote is an internal endpoint, never routed by the gateway.
-          </li>
-          <li>
-            <strong>Listing photo reorder</strong>: implemented in the API (PUT /photos/order) but not in this console.
-          </li>
-        </ul>
-      </Card>
-    </div>
+    </AdminShell>
   );
 }

@@ -256,6 +256,11 @@ export class ApiClient {
   private async refreshIfExpiring(): Promise<void> {
     const t = this.tokens.get();
     if (!t) return;
+    // Only the refresh token is known (page reload): get an access token first.
+    if (t.accessToken === '') {
+      await this.refresh();
+      return;
+    }
     const claims = decodeJwt(t.accessToken);
     if (claims && claims.exp * 1000 - this.now() < 15_000) {
       await this.refresh();
@@ -301,7 +306,7 @@ export class ApiClient {
         type: 'about:blank',
         title: 'Network error',
         status: 0,
-        detail: `${e instanceof Error ? e.message : String(e)}. Is the gateway (:8080) running?`,
+        detail: `${e instanceof Error ? e.message : String(e)}.`,
       };
       entry.ms = this.now() - started;
       entry.responseBody = problem;

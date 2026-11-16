@@ -1,515 +1,785 @@
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { bookings, payments, reviews } from '../api/endpoints';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { bookings, payments, profile, reviews } from '../api/endpoints';
 import { newIdempotencyKey } from '../api/client';
-import type { Booking, BookingStatus } from '../api/types';
+import type { Booking, BookingStatus, PaymentIntent } from '../api/types';
+import { POLICY_META, VEHICLE_LABEL } from '../labels';
+import {
+  countdown,
+  directionsUrl,
+  durationLabel,
+  expiryValid,
+  formatCardNumber,
+  formatMoney,
+  luhnValid,
+  refundTier,
+  TEST_CARDS,
+  testCardToken,
+} from '../lib';
+import { Icon, type IconName } from '../components/Icon';
 import { usePaged } from '../components/paged';
-import { Badge, Card, Copy, Field, LoadMore, Loading, Money, Notice, ProblemView, Time, useAction, useLoad, usePolling } from '../components/ui';
-import { countdown, refundTier } from '../lib';
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  DateRange,
+  Empty,
+  Field,
+  Loading,
+  LoadMore,
+  Modal,
+  ProblemView,
+  RatingInline,
+  StarInput,
+  Stars,
+  StatusBadge,
+  Tabs,
+  fmtDate,
+  fmtDateTime,
+  fmtTime,
+  isStatus,
+  toast,
+  useAction,
+  useDocumentTitle,
+  useLoad,
+  useNow,
+  usePolling,
+} from '../components/ui';
+import { TEST_MODE } from '../components/Layout';
+import { coverPhoto, useListingBrief, usePublicProfile } from '../state/cache';
 import { useAuth } from '../state/auth';
 
-const STATUSES: BookingStatus[] = [
-  'PENDING_PAYMENT',
-  'AWAITING_HOST_APPROVAL',
-  'CONFIRMED',
-  'CHECKED_IN',
-  'COMPLETED',
-  'CANCELLED_BY_DRIVER',
-  'CANCELLED_BY_HOST',
-  'DECLINED_BY_HOST',
-  'NO_SHOW',
-  'EXPIRED',
-  'PAYMENT_FAILED',
-];
 const ACTIVE: BookingStatus[] = ['PENDING_PAYMENT', 'AWAITING_HOST_APPROVAL', 'CONFIRMED', 'CHECKED_IN'];
+const MIN = 60_000;
 
-export function useNow(ms = 1000): number {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms]);
-  return now;
-}
-
-function BookingList({ role }: { role: 'driver' | 'host' }) {
-  const [when, setWhen] = useState<'all' | 'upcoming' | 'past'>('all');
-  const [status, setStatus] = useState('');
-  const p = usePaged((c) => bookings.list(role, when, status || undefined, c), [role, when, status]);
-  const act = useAction();
-  const [reason, setReason] = useState('Not available');
-  // Status polling: refresh the list while anything is in flight.
-  usePolling(p.reload, 5000, p.items.some((b) => ['PENDING_PAYMENT', 'AWAITING_HOST_APPROVAL'].includes(b.status)));
-
+// ------------------------------------------------------------------ list rows
+export function BookingRow({ b, perspective }: { b: Booking; perspective: 'driver' | 'host' }) {
+  const l = useListingBrief(b.listingId);
+  const driver = usePublicProfile(perspective === 'host' ? b.driverAccountId : null);
+  const img = coverPhoto(l);
   return (
-    <div className="stack">
-      <div className="row">
-        <h2>{role === 'driver' ? 'My bookings' : 'Booking requests and bookings on my listings'}</h2>
-        <div className="grow" />
-        <select value={when} onChange={(e) => setWhen(e.target.value as typeof when)} aria-label="When">
-          <option value="all">all</option>
-          <option value="upcoming">upcoming</option>
-          <option value="past">past</option>
-        </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
-          <option value="">any status</option>
-          {STATUSES.map((s) => (
-            <option key={s}>{s}</option>
-          ))}
-        </select>
-        <button onClick={p.reload}>Refresh</button>
+    <Link to={`/bookings/${b.id}`} className="card row-card">
+      <div className="thumb">{img ? <img src={img} alt="" /> : <div className="noimg"><Icon name="car" /></div>}</div>
+      <div className="body">
+        <div className="row between nowrap">
+          <span className="title">{l ? l.title : l === null ? 'Parking space' : '…'}</span>
+          <StatusBadge kind="booking" value={b.status} />
+        </div>
+        <span className="small">
+          <DateRange start={b.startTime} end={b.endTime} />
+        </span>
+        <span className="small muted">
+          {perspective === 'host' ? (
+            <>Driver: {driver?.displayName ?? 'ParkSmart driver'} · </>
+          ) : l ? (
+            <>{l.address} · </>
+          ) : null}
+          {formatMoney(b.totalAmount, b.currency)}
+        </span>
+        {perspective === 'driver' && b.status === 'PENDING_PAYMENT' && <span className="small strong warn-text">Payment needed to hold this space</span>}
+        {perspective === 'host' && b.status === 'AWAITING_HOST_APPROVAL' && b.hostDecisionDueBy && (
+          <span className="small strong warn-text">Respond by {fmtDateTime(b.hostDecisionDueBy)}</span>
+        )}
       </div>
-      {role === 'host' && (
-        <Notice>
-          Request-to-book listings land in AWAITING_HOST_APPROVAL after the driver pays. Approve or decline before the deadline (min of 24h and the start). Decline reason:{' '}
-          <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={255} />
-        </Notice>
-      )}
-      <ProblemView error={p.error} />
-      <ProblemView error={act.error} />
-      {p.loading && p.items.length === 0 && <Loading />}
-      {!p.loading && p.items.length === 0 && !p.error && <p className="muted">Nothing here.</p>}
-      <table className="table">
-        <thead>
-          <tr>
-            <th>When</th>
-            <th>Status</th>
-            <th>Total</th>
-            <th>Mode</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {p.items.map((b) => (
-            <tr key={b.id}>
-              <td>
-                <Time value={b.startTime} /> to <Time value={b.endTime} />
-                <div className="muted">
-                  <code>{b.id.slice(0, 8)}</code> listing <Link to={`/listings/${b.listingId}`}>{b.listingId.slice(0, 8)}</Link>
-                </div>
-              </td>
-              <td>
-                <Badge value={b.status} />
-                {b.hostDecisionDueBy && (
-                  <div className="muted">
-                    decide by <Time value={b.hostDecisionDueBy} />
-                  </div>
-                )}
-              </td>
-              <td>
-                <Money value={b.totalAmount} currency={b.currency} />
-              </td>
-              <td>{b.instantBook ? 'instant' : 'request'}</td>
-              <td className="actions">
-                <Link to={`/bookings/${b.id}`}>Open</Link>
-                {role === 'host' && b.status === 'AWAITING_HOST_APPROVAL' && (
-                  <>
-                    <button
-                      disabled={act.busy}
-                      onClick={async () => {
-                        await act.run(() => bookings.approve(b.id));
-                        p.reload();
-                      }}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      disabled={act.busy}
-                      onClick={async () => {
-                        await act.run(() => bookings.decline(b.id, reason || 'Declined'));
-                        p.reload();
-                      }}
-                    >
-                      Decline
-                    </button>
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <LoadMore cursor={p.next} onMore={p.more} busy={p.loading} />
-    </div>
+      <Icon name="chevronRight" className="muted" />
+    </Link>
   );
 }
-export const MyBookingsPage = () => <BookingList role="driver" />;
-export const HostBookingsPage = () => <BookingList role="host" />;
 
-// ------------------------------------------------------------------ earnings
-export function EarningsPage() {
-  const e = useLoad(() => payments.earnings());
-  const p = usePaged((c) => payments.payouts(c));
+// ------------------------------------------------------------------ driver: my bookings
+const ENDED_EARLY: BookingStatus[] = ['CANCELLED_BY_DRIVER', 'CANCELLED_BY_HOST', 'DECLINED_BY_HOST', 'EXPIRED', 'PAYMENT_FAILED'];
+type TripTab = 'upcoming' | 'past' | 'cancelled';
+/** The API splits by time; cancelled and expired bookings get their own tab so "Upcoming" only shows live ones. */
+const TRIP_TABS: Record<TripTab, { when: 'upcoming' | 'past' | 'all'; keep: (b: Booking) => boolean; empty: string; hint: string }> = {
+  upcoming: { when: 'upcoming', keep: (b) => !ENDED_EARLY.includes(b.status), empty: 'No upcoming bookings', hint: 'When you book a space it shows up here.' },
+  past: { when: 'past', keep: (b) => !ENDED_EARLY.includes(b.status), empty: 'No past bookings yet', hint: 'Completed bookings show up here, ready for a review.' },
+  cancelled: { when: 'all', keep: (b) => ENDED_EARLY.includes(b.status), empty: 'Nothing cancelled', hint: 'Cancelled, declined and expired bookings show up here.' },
+};
+
+export function MyBookingsPage() {
+  useDocumentTitle('My bookings');
+  const [tab, setTab] = useState<TripTab>('upcoming');
+  const cfg = TRIP_TABS[tab];
+  const p = usePaged((c) => bookings.list('driver', cfg.when, undefined, c), [tab]);
+  const items = p.items.filter(cfg.keep);
+  usePolling(p.reload, 8000, p.items.some((b) => ['PENDING_PAYMENT', 'AWAITING_HOST_APPROVAL'].includes(b.status)));
   return (
-    <div className="stack">
-      <h2>Earnings and payouts</h2>
-      <Notice>
-        Earnings come from the Payment ledger once bookings are CAPTURED (host gets 85%, platform keeps a 15% commission). Payouts are created by a weekly
-        job, so locally the list is usually empty. Payout holds and admin payout views are not implemented.
-      </Notice>
-      <ProblemView error={e.error} />
-      {e.data && (
-        <div className="stats">
-          <div>
-            <span>Total earned</span>
-            <strong>
-              <Money value={e.data.totalEarned} currency={e.data.currency} />
-            </strong>
-          </div>
-          <div>
-            <span>Paid out</span>
-            <strong>
-              <Money value={e.data.totalPaidOut} currency={e.data.currency} />
-            </strong>
-          </div>
-          <div>
-            <span>Pending payout</span>
-            <strong>
-              <Money value={e.data.pendingPayout} currency={e.data.currency} />
-            </strong>
-          </div>
+    <div className="container narrow page">
+      <div className="page-head">
+        <div>
+          <h1>My bookings</h1>
+          <p className="sub">Your parking, past and upcoming.</p>
+        </div>
+      </div>
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'upcoming', label: 'Upcoming' },
+          { value: 'past', label: 'Past' },
+          { value: 'cancelled', label: 'Cancelled' },
+        ]}
+      />
+      <ProblemView error={p.error} />
+      {p.loading && items.length === 0 ? (
+        <Loading />
+      ) : items.length === 0 && !p.error ? (
+        <Empty icon="calendar" title={cfg.empty} action={tab === 'upcoming' ? <Link className="btn btn-primary" to="/search">Find parking</Link> : undefined}>
+          {cfg.hint}
+        </Empty>
+      ) : (
+        <div className="list-cards">
+          {items.map((b) => (
+            <BookingRow key={b.id} b={b} perspective="driver" />
+          ))}
         </div>
       )}
-      <Card title="Payouts (newest first)">
-        <ProblemView error={p.error} />
-        {p.items.length === 0 && !p.loading && <p className="muted">No payouts yet.</p>}
-        <table className="table">
-          <tbody>
-            {p.items.map((x) => (
-              <tr key={x.id}>
-                <td>
-                  {x.periodStart} to {x.periodEnd}
-                </td>
-                <td>
-                  <Money value={x.amount} currency={x.currency} />
-                </td>
-                <td>
-                  <Badge value={x.status} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ marginTop: 16 }}>
         <LoadMore cursor={p.next} onMore={p.more} busy={p.loading} />
-      </Card>
+      </div>
     </div>
   );
 }
 
 // ------------------------------------------------------------------ booking detail
-export function BookingDetailPage() {
+type Step = { label: string; state: 'done' | 'on' | 'todo' | 'bad' };
+function stepsFor(b: Booking): Step[] {
+  const order: BookingStatus[] = ['PENDING_PAYMENT', ...(b.instantBook ? [] : (['AWAITING_HOST_APPROVAL'] as BookingStatus[])), 'CONFIRMED', 'CHECKED_IN', 'COMPLETED'];
+  const labels: Record<string, string> = { PENDING_PAYMENT: 'Payment', AWAITING_HOST_APPROVAL: 'Host accepts', CONFIRMED: 'Confirmed', CHECKED_IN: 'Parked', COMPLETED: 'Done' };
+  const idx = order.indexOf(b.status);
+  if (idx >= 0) return order.map((s, i) => ({ label: labels[s], state: i < idx || b.status === 'COMPLETED' ? 'done' : i === idx ? 'on' : 'todo' }));
+  // Terminal, unhappy states: mark where it stopped.
+  const stoppedAt: Record<string, BookingStatus> = {
+    EXPIRED: 'PENDING_PAYMENT',
+    PAYMENT_FAILED: 'CONFIRMED',
+    DECLINED_BY_HOST: 'AWAITING_HOST_APPROVAL',
+    CANCELLED_BY_DRIVER: 'CONFIRMED',
+    CANCELLED_BY_HOST: 'CONFIRMED',
+    NO_SHOW: 'CHECKED_IN',
+  };
+  const stop = order.indexOf(stoppedAt[b.status] ?? 'CONFIRMED');
+  return order.map((s, i) => ({ label: i === stop ? (b.status === 'NO_SHOW' ? 'No-show' : b.status === 'EXPIRED' ? 'Not paid' : 'Ended') : labels[s], state: i < stop ? 'done' : i === stop ? 'bad' : 'todo' }));
+}
+
+function Timeline({ b }: { b: Booking }) {
+  return (
+    <ol className="timeline" aria-label="Booking progress">
+      {stepsFor(b).map((s) => (
+        <li key={s.label} className={s.state}>
+          <span className="dot">{s.state === 'done' ? <Icon name="check" size={13} /> : s.state === 'bad' ? <Icon name="x" size={13} /> : null}</span>
+          {s.label}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function BookingPage() {
   const { id = '' } = useParams();
   const a = useAuth();
   const now = useNow();
   const b = useLoad(() => bookings.get(id), [id]);
   const bk = b.data;
-  const isDriver = !!bk && bk.driverAccountId === a.accountId;
-  const isHost = !!bk && bk.hostAccountId === a.accountId;
-  // Status polling: the saga and the timers move bookings in the background.
+  const listing = useListingBrief(bk?.listingId);
+  useDocumentTitle(bk ? 'Booking' : null);
+  // The saga and the timers move bookings in the background: poll while anything can still change.
   usePolling(b.reload, 4000, !!bk && ACTIVE.includes(bk.status));
 
   if (b.loading && !bk) return <Loading what="booking" />;
-  if (!bk) return <ProblemView error={b.error} />;
+  if (!bk) {
+    return (
+      <div className="container narrow page">
+        <ProblemView error={b.error} />
+      </div>
+    );
+  }
+  const isDriver = bk.driverAccountId === a.accountId;
+  const isHost = bk.hostAccountId === a.accountId;
+  const img = coverPhoto(listing);
+  const back = isDriver ? '/bookings' : isHost ? '/host/bookings' : '/admin/bookings';
 
   return (
-    <div className="stack">
-      <div className="row">
-        <h2>Booking</h2> <Badge value={bk.status} />
-        <span className="muted">
-          polling every 4 s while active <Copy text={bk.id} label="copy id" />
-        </span>
-        <div className="grow" />
-        <Link to={isHost && !isDriver ? '/host/bookings' : '/bookings'}>Back</Link>
-      </div>
-      <ProblemView error={b.error} />
-      <Card title="Details">
-        <dl className="kv">
-          <dt>Id</dt>
-          <dd>
-            <code>{bk.id}</code>
-          </dd>
-          <dt>Listing</dt>
-          <dd>
-            <Link to={`/listings/${bk.listingId}`}>{bk.listingId}</Link>
-          </dd>
-          <dt>Window</dt>
-          <dd>
-            <Time value={bk.startTime} /> to <Time value={bk.endTime} /> <span className="muted">({bk.startTime} to {bk.endTime})</span>
-          </dd>
-          <dt>Price</dt>
-          <dd>
-            <Money value={bk.pricePerHour} currency={bk.currency} />/h, total <Money value={bk.totalAmount} currency={bk.currency} />, buffer {bk.bufferMinutes} min
-          </dd>
-          <dt>Policy / mode</dt>
-          <dd>
-            {bk.cancellationPolicy}, {bk.instantBook ? 'instant book' : 'request to book'}
-          </dd>
-          {bk.paymentDueBy && (
-            <>
-              <dt>Pay by</dt>
-              <dd>
-                <Time value={bk.paymentDueBy} /> ({countdown(new Date(bk.paymentDueBy).getTime(), now)} left)
-              </dd>
-            </>
+    <div className="container page">
+      <Link to={back} className="small row" style={{ gap: 4, marginBottom: 16 }}>
+        <Icon name="chevronLeft" size={15} /> {isDriver ? 'My bookings' : isHost ? 'Bookings' : 'Back'}
+      </Link>
+      <div className="with-aside">
+        <div className="stack-lg">
+          <div className="stack">
+            <div className="row between">
+              <h1 style={{ fontSize: '1.7rem' }}>{headline(bk, isDriver)}</h1>
+              <StatusBadge kind="booking" value={bk.status} />
+            </div>
+            <Timeline b={bk} />
+          </div>
+          {isDriver && <DriverPanel booking={bk} now={now} onChange={b.reload} listingLoc={listing?.location} />}
+          {isHost && !isDriver && <HostPanel booking={bk} onChange={b.reload} />}
+          {!isDriver && !isHost && a.hasRole('ADMIN') && (
+            <Alert kind="info">
+              You are viewing this booking as an admin. <Link to={`/admin/bookings?id=${bk.id}`}>Open the support case</Link>.
+            </Alert>
           )}
-          {bk.hostDecisionDueBy && (
-            <>
-              <dt>Host decides by</dt>
-              <dd>
-                <Time value={bk.hostDecisionDueBy} />
-              </dd>
-            </>
-          )}
-          {bk.refundAmount && (
-            <>
-              <dt>Refund</dt>
-              <dd>
-                <Money value={bk.refundAmount} currency={bk.currency} />
-              </dd>
-            </>
-          )}
-          <dt>You are</dt>
-          <dd>{isDriver ? 'the driver' : isHost ? 'the host' : a.hasRole('ADMIN') ? 'an admin' : 'someone else'}</dd>
-        </dl>
-      </Card>
+          {bk.status === 'COMPLETED' && (isDriver || isHost) && <ReviewPanel booking={bk} isDriver={isDriver} />}
+        </div>
 
-      {isDriver && bk.status === 'PENDING_PAYMENT' && <PayCard booking={bk} onDone={b.reload} />}
-      {isDriver && bk.status === 'AWAITING_HOST_APPROVAL' && (
-        <Notice kind="warn">Paid (authorized). Waiting for the host to approve or decline; the status refreshes by itself. Cancelling now refunds 100%.</Notice>
-      )}
-      {isDriver && <DriverActions booking={bk} now={now} onDone={b.reload} />}
-      {isHost && !isDriver && <HostActions booking={bk} onDone={b.reload} />}
-      {bk.status === 'COMPLETED' && (isDriver || isHost) && <ReviewCard booking={bk} isDriver={isDriver} />}
+        <aside className="sticky stack">
+          <div className="card">
+            <div className="card-body stack">
+              <div className="trip-hero" style={{ gridTemplateColumns: '88px 1fr' }}>
+                <div className="thumb" style={{ width: 88, height: 70 }}>
+                  {img ? <img src={img} alt="" /> : <div className="noimg"><Icon name="car" /></div>}
+                </div>
+                <div className="stack-xs">
+                  <Link to={`/listings/${bk.listingId}`} className="strong" style={{ color: 'var(--ink)' }}>
+                    {listing?.title ?? 'Parking space'}
+                  </Link>
+                  <span className="small muted">{listing?.address}</span>
+                </div>
+              </div>
+              <hr className="divider" style={{ margin: 0 }} />
+              <dl className="kv" style={{ gridTemplateColumns: '90px 1fr' }}>
+                <dt>Arrive</dt>
+                <dd>{fmtDateTime(bk.startTime)}</dd>
+                <dt>Leave</dt>
+                <dd>{fmtDateTime(bk.endTime)}</dd>
+                <dt>Duration</dt>
+                <dd>{durationLabel(bk.startTime, bk.endTime)}</dd>
+                {isDriver && bk.vehicleId && <VehicleLine id={bk.vehicleId} />}
+              </dl>
+              <hr className="divider" style={{ margin: 0 }} />
+              <div className="breakdown">
+                <div className="line">
+                  <span className="muted">{formatMoney(bk.pricePerHour, bk.currency)} / hour</span>
+                  <span>{formatMoney(bk.totalAmount, bk.currency)}</span>
+                </div>
+                {bk.refundAmount && Number(bk.refundAmount) > 0 && (
+                  <div className="line ok-text">
+                    <span>Refunded</span>
+                    <span>−{formatMoney(bk.refundAmount, bk.currency)}</span>
+                  </div>
+                )}
+                <div className="line total">
+                  <span>Total</span>
+                  <span>{formatMoney(bk.totalAmount, bk.currency)}</span>
+                </div>
+              </div>
+              <p className="tiny muted">
+                {POLICY_META[bk.cancellationPolicy].label} cancellation: {POLICY_META[bk.cancellationPolicy].short.toLowerCase()}. Booking ref {bk.id.slice(0, 8).toUpperCase()}
+              </p>
+            </div>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
 
-const FAKE_TOKENS = [
-  { token: 'fake_ok', text: 'authorizes (booking becomes CONFIRMED or AWAITING_HOST_APPROVAL)' },
-  { token: 'fake_decline', text: 'card_declined: intent FAILED, booking EXPIRED (final; book again)' },
-  { token: 'fake_capture_fail', text: 'authorizes, but capture is rejected on confirmation: booking becomes PAYMENT_FAILED' },
-];
+function headline(b: Booking, isDriver: boolean): string {
+  switch (b.status) {
+    case 'PENDING_PAYMENT':
+      return isDriver ? 'Confirm and pay' : 'Waiting for the driver to pay';
+    case 'AWAITING_HOST_APPROVAL':
+      return isDriver ? 'Request sent' : 'New booking request';
+    case 'CONFIRMED':
+      return isDriver ? "You're booked" : 'Upcoming booking';
+    case 'CHECKED_IN':
+      return isDriver ? "You're parked" : 'Driver is parked';
+    case 'COMPLETED':
+      return 'Booking complete';
+    default:
+      return 'Booking ' + (b.status === 'EXPIRED' ? 'expired' : 'ended');
+  }
+}
 
-function PayCard({ booking, onDone }: { booking: Booking; onDone: () => void }) {
-  const [token, setToken] = useState('fake_ok');
-  // One key per payment attempt: a double-click or retry replays instead of charging twice.
-  const [key, setKey] = useState(newIdempotencyKey);
-  const intent = useLoad(() => payments.intentFor(booking.id), [booking.id]);
-  usePolling(intent.reload, 2000, !intent.data && !!intent.error);
-  const act = useAction();
-  const [last, setLast] = useState<string | null>(null);
-  const i = intent.data;
+function VehicleLine({ id }: { id: string }) {
+  const v = useLoad(() => profile.vehicles().then((r) => r.items.find((x) => x.id === id) ?? null), [id]);
+  if (!v.data) return null;
   return (
-    <Card title="Pay (FakeProcessor)">
-      <p className="muted">
-        The payment intent is created asynchronously from BookingRequested: a 404 for a second or two is normal; this retries. No real card data is involved.
-      </p>
-      {!i && <Loading what="payment intent" />}
-      {!i && intent.error ? (
-        (intent.error as { status?: number }).status === 404 ? <p className="muted">Intent not there yet, retrying...</p> : <ProblemView error={intent.error} />
-      ) : null}
-      {i && (
-        <>
-          <p>
-            Intent <code>{i.id}</code> <Badge value={i.status} /> amount <Money value={i.amount} currency={i.currency} />
-            {i.failureCode && <span className="bad-text"> failure: {i.failureCode}</span>}
-          </p>
-          <ul className="tokens">
-            {FAKE_TOKENS.map((t) => (
-              <li key={t.token}>
-                <label>
-                  <input type="radio" name="tok" checked={token === t.token} onChange={() => setToken(t.token)} /> <code>{t.token}</code> {t.text}
-                </label>
-              </li>
-            ))}
-          </ul>
-          <Field label="Or any other token (3-255 chars)">
-            <input value={token} onChange={(e) => setToken(e.target.value)} minLength={3} maxLength={255} />
-          </Field>
-          <p className="muted">
-            Idempotency-Key for this attempt: <code>{key}</code> (re-click to replay the stored result;{' '}
-            <button className="link" onClick={() => setKey(newIdempotencyKey())}>
-              new key
-            </button>
-            )
-          </p>
-          <button
-            disabled={act.busy || i.status !== 'CREATED'}
-            onClick={async () => {
-              const r = await act.run(() => payments.authorize(i.id, token, key));
-              if (r) {
-                setLast(`authorize -> HTTP ${r.status}, intent ${r.data.status}${r.data.failureCode ? ' (' + r.data.failureCode + ')' : ''}`);
-                intent.reload();
-                onDone();
-              }
-            }}
-          >
-            Authorize payment
-          </button>
-          {last && <Notice kind="info">{last}. The booking updates through events; watch the status above.</Notice>}
-          <ProblemView error={act.error} />
-        </>
-      )}
-    </Card>
+    <>
+      <dt>Vehicle</dt>
+      <dd>
+        {v.data.licensePlate} · {VEHICLE_LABEL[v.data.vehicleType]}
+      </dd>
+    </>
   );
 }
 
-function DriverActions({ booking, now, onDone }: { booking: Booking; now: number; onDone: () => void }) {
+// ------------------------------------------------------------------ driver side
+function DriverPanel({ booking: b, now, onChange, listingLoc }: { booking: Booking; now: number; onChange: () => void; listingLoc?: { lat: number; lng: number } }) {
+  const [cancelling, setCancelling] = useState(false);
   const act = useAction();
-  const [reason, setReason] = useState('Plans changed');
-  const startMs = new Date(booking.startTime).getTime();
-  const opens = startMs - 15 * 60_000;
-  const closes = startMs + 30 * 60_000;
-  const inWindow = now >= opens && now < closes;
-  const tier = refundTier(booking.cancellationPolicy, booking.startTime, now, booking.totalAmount);
-  const canCancel = ['CONFIRMED', 'AWAITING_HOST_APPROVAL'].includes(booking.status);
+  const startMs = new Date(b.startTime).getTime();
+  const opens = startMs - 15 * MIN;
+  const closes = startMs + 30 * MIN;
+  const canCancel = ['CONFIRMED', 'AWAITING_HOST_APPROVAL'].includes(b.status);
+
+  const directions = listingLoc && ['CONFIRMED', 'CHECKED_IN'].includes(b.status) && (
+    <a className="btn" href={directionsUrl(listingLoc.lat, listingLoc.lng)} target="_blank" rel="noreferrer">
+      <Icon name="map" size={17} /> Directions
+    </a>
+  );
+
   return (
-    <Card title="Driver actions">
-      {booking.status === 'CONFIRMED' && (
-        <>
-          <p>
-            Check-in window: <Time value={new Date(opens).toISOString()} /> to <Time value={new Date(closes).toISOString()} />.{' '}
-            {now < opens ? `Opens in ${countdown(opens, now)}.` : inWindow ? 'Open now.' : 'Closed (the no-show timer will mark it NO_SHOW).'}
-          </p>
-          <button
-            disabled={act.busy || !inWindow}
-            onClick={async () => {
-              await act.run(() => bookings.checkIn(booking.id));
-              onDone();
-            }}
-          >
-            Check in
-          </button>
-        </>
+    <div className="stack">
+      {b.status === 'PENDING_PAYMENT' && <Checkout booking={b} now={now} onChange={onChange} />}
+
+      {b.status === 'AWAITING_HOST_APPROVAL' && (
+        <Alert kind="info" title="Waiting for the host">
+          Your card is authorized but not charged. The host has until {b.hostDecisionDueBy ? fmtDateTime(b.hostDecisionDueBy) : 'shortly before arrival'} to accept. If they decline or
+          don't respond, the hold is released.
+        </Alert>
       )}
-      {booking.status === 'CHECKED_IN' && (
-        <>
-          <p>Check-out completes the booking immediately (no refund for unused time). Otherwise the completion timer does it at the end time.</p>
-          <button
-            disabled={act.busy}
-            onClick={async () => {
-              await act.run(() => bookings.checkOut(booking.id));
-              onDone();
-            }}
-          >
-            Check out (complete)
-          </button>
-        </>
+
+      {b.status === 'CONFIRMED' && (
+        <Card>
+          <div className="stack">
+            <div className="row">
+              <Icon name="checkCircle" size={22} className="ok-text" />
+              <strong>Your space is reserved for {fmtDate(b.startTime)}, {fmtTime(b.startTime)}.</strong>
+            </div>
+            <p className="muted">
+              {now < opens
+                ? `Check-in opens 15 minutes before arrival (in ${countdown(opens, now)}).`
+                : now < closes
+                  ? 'Check-in is open. Check in when you arrive.'
+                  : 'The check-in window has closed.'}{' '}
+              Check in within 30 minutes after your arrival time or the booking is marked as a no-show.
+            </p>
+            <div className="row">
+              <Button
+                variant="primary"
+                icon="pin"
+                busy={act.busy}
+                disabled={now < opens || now >= closes}
+                onClick={async () => {
+                  const r = await act.run(() => bookings.checkIn(b.id));
+                  if (r) {
+                    toast('Checked in. Enjoy your stay!');
+                    onChange();
+                  }
+                }}
+              >
+                I've arrived — check in
+              </Button>
+              {directions}
+            </div>
+          </div>
+        </Card>
       )}
+
+      {b.status === 'CHECKED_IN' && (
+        <Card>
+          <div className="stack">
+            <p>
+              You're checked in until <strong>{fmtTime(b.endTime)}</strong>. Check out when you leave; if you forget, we'll close the booking at your departure time.
+            </p>
+            <div className="row">
+              <Button
+                variant="primary"
+                icon="logout"
+                busy={act.busy}
+                onClick={async () => {
+                  const r = await act.run(() => bookings.checkOut(b.id));
+                  if (r) {
+                    toast('Checked out. Thanks for parking with ParkSmart!');
+                    onChange();
+                  }
+                }}
+              >
+                Check out
+              </Button>
+              {directions}
+            </div>
+            <p className="tiny muted">Leaving early doesn't refund unused time.</p>
+          </div>
+        </Card>
+      )}
+
+      {b.status === 'EXPIRED' && (
+        <Alert kind="warn" title="This booking expired">
+          It wasn't paid in time (or the card was declined), so the space was released. <Link to={`/listings/${b.listingId}`}>Book again</Link>
+        </Alert>
+      )}
+      {b.status === 'PAYMENT_FAILED' && (
+        <Alert kind="bad" title="Payment couldn't be completed">
+          The bank rejected the charge when the booking was confirmed, so it was cancelled. You haven't been charged. <Link to={`/listings/${b.listingId}`}>Try again</Link>
+        </Alert>
+      )}
+      {b.status === 'DECLINED_BY_HOST' && (
+        <Alert kind="warn" title="The host couldn't take this booking">
+          The authorization on your card has been released. <Link to="/search">Find another space</Link>
+        </Alert>
+      )}
+      {b.status === 'CANCELLED_BY_HOST' && (
+        <Alert kind="warn" title="The host cancelled">
+          You get a full refund of {formatMoney(b.refundAmount ?? b.totalAmount)}. Sorry about that. <Link to="/search">Find another space</Link>
+        </Alert>
+      )}
+      {b.status === 'CANCELLED_BY_DRIVER' && (
+        <Alert kind="info" title="You cancelled this booking">
+          {b.refundAmount && Number(b.refundAmount) > 0 ? `A refund of ${formatMoney(b.refundAmount)} goes back to your card within 5–7 business days.` : 'No refund was due under the cancellation policy.'}
+        </Alert>
+      )}
+      {b.status === 'NO_SHOW' && (
+        <Alert kind="warn" title="Marked as a no-show">
+          You didn't check in within 30 minutes of your arrival time.
+        </Alert>
+      )}
+
+      <ProblemView error={act.error} compact />
+
       {canCancel && (
-        <div className="stack-sm">
-          <p>
-            {booking.status === 'AWAITING_HOST_APPROVAL' ? (
-              <>If you cancel now the refund is <strong>100%</strong> (awaiting host approval).</>
-            ) : (
-              <>
-                If you cancel now: <strong>{tier.percent}%</strong> refund = <Money value={tier.amount} currency={booking.currency} /> ({tier.explanation}). The server
-                computes the real amount from the snapshotted policy.
-              </>
-            )}
-          </p>
-          <Field label="Reason">
-            <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={255} required />
-          </Field>
-          <button
-            disabled={act.busy || !reason}
-            onClick={async () => {
-              await act.run(() => bookings.cancel(booking.id, reason));
-              onDone();
-            }}
-          >
+        <div>
+          <button type="button" className="link-btn" style={{ color: 'var(--bad)' }} onClick={() => setCancelling(true)}>
             Cancel booking
           </button>
         </div>
       )}
-      {!canCancel && !['CONFIRMED', 'CHECKED_IN'].includes(booking.status) && <p className="muted">No driver actions for {booking.status}.</p>}
-      <ProblemView error={act.error} />
-    </Card>
+      {cancelling && <CancelModal booking={b} now={now} asHost={false} onClose={() => setCancelling(false)} onDone={onChange} />}
+    </div>
   );
 }
 
-function HostActions({ booking, onDone }: { booking: Booking; onDone: () => void }) {
-  const act = useAction();
-  const [reason, setReason] = useState('Not available');
+function Checkout({ booking: b, now, onChange }: { booking: Booking; now: number; onChange: () => void }) {
+  const intent = useLoad(() => payments.intentFor(b.id), [b.id]);
+  // The intent is created from the BookingRequested event: a 404 for a moment is normal.
+  usePolling(intent.reload, 1500, !intent.data && isStatus(intent.error, 404));
+  usePolling(intent.reload, 2500, intent.data?.status === 'AUTHORIZED');
+  const due = b.paymentDueBy ? new Date(b.paymentDueBy).getTime() : null;
+
   return (
-    <Card title="Host actions">
-      <Field label="Reason (decline / cancel)">
-        <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={255} />
-      </Field>
-      <div className="row">
-        <button
-          disabled={act.busy || booking.status !== 'AWAITING_HOST_APPROVAL'}
-          onClick={async () => {
-            await act.run(() => bookings.approve(booking.id));
-            onDone();
-          }}
-        >
-          Approve
-        </button>
-        <button
-          disabled={act.busy || booking.status !== 'AWAITING_HOST_APPROVAL'}
-          onClick={async () => {
-            await act.run(() => bookings.decline(booking.id, reason));
-            onDone();
-          }}
-        >
-          Decline (100% refund)
-        </button>
-        <button
-          disabled={act.busy || booking.status !== 'CONFIRMED'}
-          onClick={async () => {
-            await act.run(() => bookings.cancel(booking.id, reason));
-            onDone();
-          }}
-        >
-          Cancel as host (100% refund)
-        </button>
+    <Card title="Payment">
+      <div className="stack">
+        {due && due > now && (
+          <Alert kind="warn">
+            We're holding this space for you for <span className="countdown">{countdown(due, now)}</span>. Complete payment to keep it.
+          </Alert>
+        )}
+        {!intent.data && (!intent.error || isStatus(intent.error, 404)) && <Loading what="payment" />}
+        {!intent.data && !!intent.error && !isStatus(intent.error, 404) && <ProblemView error={intent.error} />}
+        {intent.data && <PayForm intent={intent.data} instant={b.instantBook} onPaid={() => (intent.reload(), onChange())} />}
       </div>
-      <ProblemView error={act.error} />
     </Card>
   );
 }
 
-function ReviewCard({ booking, isDriver }: { booking: Booking; isDriver: boolean }) {
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
+function PayForm({ intent, instant, onPaid }: { intent: PaymentIntent; instant: boolean; onPaid: () => void }) {
+  const [name, setName] = useState('');
+  const [number, setNumber] = useState('');
+  const [exp, setExp] = useState('');
+  const [cvc, setCvc] = useState('');
+  const [touched, setTouched] = useState(false);
+  // One key per payment attempt: a double click or a retry replays instead of charging twice.
+  const [key] = useState(newIdempotencyKey);
   const act = useAction();
-  const [done, setDone] = useState<string | null>(null);
+
+  if (intent.status === 'FAILED') {
+    return (
+      <Alert kind="bad" title="Your card was declined">
+        {intent.failureCode ? `Reason: ${intent.failureCode.replace(/_/g, ' ')}. ` : ''}This booking has been released. Please book again with a different card.
+      </Alert>
+    );
+  }
+  if (intent.status === 'AUTHORIZED' || intent.status === 'CAPTURED') {
+    return (
+      <div className="row">
+        <span className="spinner" /> Payment received. {instant ? 'Confirming your booking…' : 'Sending your request to the host…'}
+      </div>
+    );
+  }
+  if (intent.status !== 'CREATED') return <p className="muted">Payment is {intent.status.toLowerCase()}.</p>;
+
+  const digits = number.replace(/\D/g, '');
+  const errors = {
+    number: !luhnValid(digits) ? 'Enter a valid card number.' : TEST_MODE && !testCardToken(digits) ? 'Test mode: use one of the test cards below.' : null,
+    exp: !expiryValid(exp, new Date()) ? 'Enter a future expiry date (MM/YY).' : null,
+    cvc: !/^\d{3,4}$/.test(cvc) ? 'Enter the 3 or 4 digit code.' : null,
+    name: name.trim().length < 2 ? 'Enter the name on the card.' : null,
+  };
+  const valid = !errors.number && !errors.exp && !errors.cvc && !errors.name;
+
+  const pay = async () => {
+    setTouched(true);
+    if (!valid) return;
+    // Card details stay in the browser; the processor only ever receives a token.
+    const token = testCardToken(digits) ?? 'fake_ok';
+    const r = await act.run(() => payments.authorize(intent.id, token, key));
+    if (r) onPaid();
+  };
+
   return (
-    <Card title={isDriver ? 'Review the listing (driver to listing)' : 'Review the driver (host to driver)'}>
-      <p className="muted">
-        Review learns about completion from the BookingCompleted event, so a 404 right after completing means "not seen yet": retry in a few seconds. One review per
-        booking and direction (409 on a duplicate); window closes 14 days after completion.
+    <form
+      className="pay-card"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void pay();
+      }}
+    >
+      <Field label="Name on card" error={touched ? errors.name : null}>
+        <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="cc-name" />
+      </Field>
+      <Field label="Card number" error={touched ? errors.number : null}>
+        <input value={number} onChange={(e) => setNumber(formatCardNumber(e.target.value))} inputMode="numeric" autoComplete="cc-number" placeholder="1234 1234 1234 1234" />
+      </Field>
+      <div className="card-row">
+        <Field label="Expiry" error={touched ? errors.exp : null}>
+          <input
+            value={exp}
+            onChange={(e) => {
+              const d = e.target.value.replace(/\D/g, '').slice(0, 4);
+              setExp(d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d);
+            }}
+            inputMode="numeric"
+            autoComplete="cc-exp"
+            placeholder="MM/YY"
+          />
+        </Field>
+        <Field label="CVC" error={touched ? errors.cvc : null}>
+          <input value={cvc} onChange={(e) => setCvc(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" autoComplete="cc-csc" placeholder="123" />
+        </Field>
+      </div>
+      <Button type="submit" variant="primary" size="lg" block busy={act.busy} icon="shield">
+        Pay {formatMoney(intent.amount, intent.currency)}
+      </Button>
+      <ProblemView error={act.error} compact />
+      <p className="tiny muted center">
+        {instant ? 'Your card is charged when the booking is confirmed.' : 'Your card is authorized now and charged only if the host accepts.'}
       </p>
+      {TEST_MODE && (
+        <div className="panel testcards">
+          <strong>Test cards</strong> (any future expiry, any CVC)
+          {TEST_CARDS.map((c) => (
+            <div key={c.token} className="row between">
+              <button type="button" className="link-btn" onClick={() => setNumber(c.number)}>
+                {c.number}
+              </button>
+              <span className="muted">{c.result}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function CancelModal({ booking: b, now, asHost, onClose, onDone }: { booking: Booking; now: number; asHost: boolean; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState('');
+  const act = useAction();
+  const tier = refundTier(b.cancellationPolicy, b.startTime, now, b.totalAmount);
+  const refund = asHost || b.status === 'AWAITING_HOST_APPROVAL' ? { percent: 100, amount: b.totalAmount } : tier;
+  return (
+    <Modal
+      title={asHost ? 'Cancel this booking?' : 'Cancel your booking?'}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Keep booking
+          </Button>
+          <Button
+            variant="danger"
+            className="solid"
+            busy={act.busy}
+            disabled={reason.trim().length < 3}
+            onClick={async () => {
+              const r = await act.run(() => bookings.cancel(b.id, reason.trim()));
+              if (r) {
+                toast('Booking cancelled');
+                onClose();
+                onDone();
+              }
+            }}
+          >
+            Cancel booking
+          </Button>
+        </>
+      }
+    >
+      {asHost ? (
+        <p>The driver gets a full refund of {formatMoney(b.totalAmount)}. Frequent cancellations can affect your listing.</p>
+      ) : (
+        <div className="panel stack-xs">
+          <div className="row between">
+            <span>Estimated refund</span>
+            <strong>
+              {formatMoney(refund.amount)} ({refund.percent}%)
+            </strong>
+          </div>
+          <span className="small muted">{b.status === 'AWAITING_HOST_APPROVAL' ? 'The host hasn\'t accepted yet, so the hold on your card is released in full.' : tier.explanation}</span>
+        </div>
+      )}
+      <Field label={asHost ? 'Message to the driver' : 'Why are you cancelling?'}>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={255} placeholder={asHost ? 'e.g. The space is unavailable that day' : 'e.g. Plans changed'} />
+      </Field>
+      <ProblemView error={act.error} compact />
+    </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ host side
+function HostPanel({ booking: b, onChange }: { booking: Booking; onChange: () => void }) {
+  const now = useNow(30_000);
+  const driver = usePublicProfile(b.driverAccountId);
+  const driverReviews = useLoad(() => reviews.list('DRIVER', b.driverAccountId).catch(() => null), [b.driverAccountId]);
+  const act = useAction();
+  const [declining, setDeclining] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState('');
+  const nav = useNavigate();
+
+  return (
+    <div className="stack">
+      {b.status === 'AWAITING_HOST_APPROVAL' && (
+        <Card>
+          <div className="stack">
+            <p>
+              <strong>{driver?.displayName ?? 'A driver'}</strong> wants to park on <strong>{fmtDate(b.startTime)}</strong>, {fmtTime(b.startTime)} – {fmtTime(b.endTime)}. Their card is
+              already authorized for {formatMoney(b.totalAmount)}.
+            </p>
+            {b.hostDecisionDueBy && (
+              <Alert kind="warn">
+                Respond within <span className="countdown">{countdown(new Date(b.hostDecisionDueBy).getTime(), now)}</span>. Requests you don't answer expire automatically.
+              </Alert>
+            )}
+            <div className="row">
+              <Button
+                variant="primary"
+                icon="check"
+                busy={act.busy}
+                onClick={async () => {
+                  const r = await act.run(() => bookings.approve(b.id));
+                  if (r) {
+                    toast('Booking accepted');
+                    onChange();
+                  }
+                }}
+              >
+                Accept
+              </Button>
+              <Button variant="danger" busy={act.busy} onClick={() => setDeclining(true)}>
+                Decline
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+      {b.status === 'CONFIRMED' && (
+        <Alert kind="ok" title="Confirmed">
+          {driver?.displayName ?? 'The driver'} arrives {fmtDateTime(b.startTime)}. Make sure the space is free.{' '}
+          <button type="button" className="link-btn" style={{ color: 'var(--bad)' }} onClick={() => setCancelling(true)}>
+            Cancel booking
+          </button>
+        </Alert>
+      )}
+      {b.status === 'CHECKED_IN' && <Alert kind="info">The driver has checked in and is parked until {fmtTime(b.endTime)}.</Alert>}
+      {b.status === 'PENDING_PAYMENT' && <Alert kind="info">The driver is completing payment. Unpaid bookings expire after 10 minutes.</Alert>}
+      <ProblemView error={act.error} compact />
+
+      <Card title="About the driver">
+        <div className="stack">
+          <div className="host-box">
+            <Avatar name={driver?.displayName} url={driver?.photoUrl} size={48} />
+            <div>
+              <div className="strong">{driver?.displayName ?? 'ParkSmart driver'}</div>
+              <RatingInline avg={driver?.ratingAvg} count={driver?.ratingCount ?? 0} />
+            </div>
+          </div>
+          {driverReviews.data && driverReviews.data.items.length > 0 && (
+            <div>
+              {driverReviews.data.items.slice(0, 3).map((r) => (
+                <div className="review" key={r.id}>
+                  <Stars value={r.rating} size={13} />
+                  {r.comment && <p className="small">{r.comment}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {declining && (
+        <Modal
+          title="Decline this request?"
+          onClose={() => setDeclining(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setDeclining(false)}>
+                Back
+              </Button>
+              <Button
+                variant="danger"
+                className="solid"
+                busy={act.busy}
+                disabled={reason.trim().length < 3}
+                onClick={async () => {
+                  const r = await act.run(() => bookings.decline(b.id, reason.trim()));
+                  setDeclining(false);
+                  if (r) {
+                    toast('Request declined');
+                    onChange();
+                    nav('/host/bookings');
+                  }
+                }}
+              >
+                Decline
+              </Button>
+            </>
+          }
+        >
+          <p className="muted">The driver's card hold is released in full.</p>
+          <Field label="Message to the driver">
+            <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={255} placeholder="e.g. The space isn't free at that time" />
+          </Field>
+        </Modal>
+      )}
+      {cancelling && <CancelModal booking={b} now={now} asHost onClose={() => setCancelling(false)} onDone={onChange} />}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ reviews after completion
+function ReviewPanel({ booking: b, isDriver }: { booking: Booking; isDriver: boolean }) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [done, setDone] = useState(false);
+  const act = useAction();
+  const conflict = isStatus(act.error, 409);
+  const notYet = isStatus(act.error, 404);
+  const icon: IconName = 'star';
+  if (done || conflict) {
+    return (
+      <Alert kind="ok" title={conflict ? "You've already left a review" : 'Thanks for your review!'}>
+        {isDriver ? 'It helps other drivers find great spaces.' : 'It helps other hosts know who they are hosting.'}
+      </Alert>
+    );
+  }
+  return (
+    <Card title={isDriver ? 'How was your parking?' : 'How was this driver?'}>
       <form
         className="form"
         onSubmit={async (e) => {
           e.preventDefault();
-          const r = await act.run(() => reviews.submit(booking.id, rating, comment));
-          if (r) setDone(`Published: ${r.direction}, ${r.rating} stars.`);
+          const r = await act.run(() => reviews.submit(b.id, rating, comment.trim()));
+          if (r) setDone(true);
         }}
       >
-        <Field label="Rating">
-          <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
-            {[5, 4, 3, 2, 1].map((n) => (
-              <option key={n}>{n}</option>
-            ))}
-          </select>
+        <StarInput value={rating} onChange={setRating} />
+        <Field label="Tell others about it (optional)">
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} maxLength={1000} rows={3} placeholder={isDriver ? 'Easy to find? Safe? Would you park here again?' : 'Punctual, respectful of the space?'} />
         </Field>
-        <Field label="Comment (optional, max 1000)">
-          <textarea value={comment} onChange={(e) => setComment(e.target.value)} maxLength={1000} rows={3} />
-        </Field>
-        <button type="submit" disabled={act.busy}>
-          Submit review
-        </button>
+        {notYet ? (
+          <Alert kind="info">We're still wrapping up this booking. Try again in a few seconds.</Alert>
+        ) : (
+          <ProblemView error={act.error} compact />
+        )}
+        <div>
+          <Button type="submit" variant="primary" icon={icon} busy={act.busy} disabled={rating === 0}>
+            Submit review
+          </Button>
+        </div>
+        <p className="tiny muted">You can review up to 14 days after the booking ends. Reviews are public.</p>
       </form>
-      {done && <Notice kind="ok">{done}</Notice>}
-      <ProblemView error={act.error} />
-      <p>
-        <Link to={`/reviews?targetType=${isDriver ? 'LISTING' : 'DRIVER'}&targetId=${isDriver ? booking.listingId : booking.driverAccountId}`}>
-          View reviews for the {isDriver ? 'listing' : 'driver'}
-        </Link>
-      </p>
     </Card>
   );
 }

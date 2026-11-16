@@ -94,8 +94,9 @@ export const profile = {
 
 // ---------------------------------------------------------------- storage upload (presigned PUT)
 /**
- * Presigned URLs point at object storage on localhost:9000, which sends no CORS headers for the dev
- * origin. In dev, the Vite proxy forwards /_storage/* to it (changeOrigin keeps the signed Host).
+ * Presigned URLs point at object storage on localhost:9000 locally, which sends no CORS headers. Both the
+ * Vite dev server and the nginx image forward /_storage/* to it with the signed Host kept. Real S3 URLs
+ * (AWS, with a CORS rule for the site origin) are used as they are.
  */
 export function storageUrl(uploadUrl: string): string {
   try {
@@ -139,6 +140,8 @@ export const listings = {
     api.post<PhotoUploadSlot>(`/api/v1/listings/${id}/photos/upload-urls`, { contentType, contentLength }),
   confirmPhoto: (id: string, photoId: string) => api.post<ListingPhoto>(`/api/v1/listings/${id}/photos/${photoId}/confirm`),
   deletePhoto: (id: string, photoId: string) => api.delete<void>(`/api/v1/listings/${id}/photos/${photoId}`),
+  /** photoIds must list every READY photo exactly once; the first one is the cover. */
+  reorderPhotos: (id: string, photoIds: string[]) => api.put<Listing>(`/api/v1/listings/${id}/photos/order`, { photoIds }),
   setAvailability: (id: string, rules: AvailabilityRule[]) =>
     api.put<Listing>(`/api/v1/listings/${id}/availability`, { rules }),
   addBlackout: (id: string, b: { start: string; end: string; reason?: string }) =>

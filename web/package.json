@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "ParkSmart manual test console (React + Vite). Local development only.",
+  "description": "ParkSmart web app (React + Vite): drivers, hosts and admins.",
   "scripts": {
     "dev": "vite",
     "dev:direct-auth": "cross-env PARKSMART_AUTH_DIRECT=1 vite",

@@ -1,28 +1,32 @@
 import { useState, type FormEvent } from 'react';
-import { AMENITIES, POLICIES, VEHICLE_TYPES, type Amenity, type CancellationPolicy, type ListingTerms, type VehicleType } from '../api/types';
-import { Field, ProblemView } from './ui';
+import { AMENITIES, POLICIES, VEHICLE_TYPES, type Amenity, type ListingTerms } from '../api/types';
+import { AMENITY_META, CITIES, POLICY_META, TIME_ZONES, VEHICLE_FITS } from '../labels';
+import { Icon } from './Icon';
 import { LeafletMap } from './LeafletMap';
-
-export const POLICY_TEXT: Record<CancellationPolicy, string> = {
-  FLEXIBLE: 'FLEXIBLE: 100% refund if cancelled 1 hour or more before start, else 0%.',
-  MODERATE: 'MODERATE: 100% if 24 hours or more before start, 50% if 1 hour or more, else 0%.',
-  STRICT: 'STRICT: 50% if 24 hours or more before start, else 0%.',
-};
+import { Button, Field, ProblemView } from './ui';
 
 export const DEFAULT_TERMS: ListingTerms = {
   title: '',
   description: '',
   address: '',
-  location: { lat: 12.9716, lng: 77.5946 },
+  location: { lat: CITIES[0].lat, lng: CITIES[0].lng },
   timeZone: 'Asia/Kolkata',
   pricePerHour: '50.00',
   currency: 'INR',
-  maxVehicleType: 'SUV',
-  amenities: ['COVERED'],
+  maxVehicleType: 'SEDAN',
+  amenities: [],
   instantBook: true,
   cancellationPolicy: 'MODERATE',
   bufferMinutes: 0,
 };
+
+const BUFFERS = [0, 5, 10, 15, 30, 45, 60, 90, 120];
+
+/** Normalises "50" / "50.5" to the API's decimal format ("50.00"). */
+function money(s: string): string {
+  const n = Number(s);
+  return Number.isFinite(n) ? n.toFixed(2) : s;
+}
 
 export function ListingForm({
   initial,
@@ -30,6 +34,7 @@ export function ListingForm({
   busy,
   error,
   disabled,
+  locationNote,
   onSubmit,
 }: {
   initial: ListingTerms;
@@ -37,22 +42,26 @@ export function ListingForm({
   busy: boolean;
   error: unknown;
   disabled?: boolean;
+  locationNote?: string;
   onSubmit: (terms: ListingTerms) => void;
 }) {
-  const [t, setT] = useState<ListingTerms>(initial);
+  const [t, setT] = useState<ListingTerms>({ ...initial, pricePerHour: String(Number(initial.pricePerHour)) });
   const set = <K extends keyof ListingTerms>(k: K, v: ListingTerms[K]) => setT((cur) => ({ ...cur, [k]: v }));
   const toggle = (a: Amenity) => set('amenities', t.amenities.includes(a) ? t.amenities.filter((x) => x !== a) : [...t.amenities, a]);
+  const price = Number(t.pricePerHour);
+  const priceError = !Number.isFinite(price) || price < 5 || price > 2000 ? 'Between ₹5 and ₹2,000 per hour.' : null;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (priceError) return;
     // Only the editable terms go on the wire (the initial object may be a whole Listing).
     onSubmit({
-      title: t.title,
-      description: t.description ?? '',
-      address: t.address,
+      title: t.title.trim(),
+      description: (t.description ?? '').trim(),
+      address: t.address.trim(),
       location: { lat: t.location.lat, lng: t.location.lng },
       timeZone: t.timeZone,
-      pricePerHour: t.pricePerHour,
+      pricePerHour: money(t.pricePerHour),
       currency: 'INR',
       maxVehicleType: t.maxVehicleType,
       amenities: t.amenities,
@@ -64,104 +73,150 @@ export function ListingForm({
 
   return (
     <form className="form" onSubmit={submit}>
-      <fieldset disabled={disabled || busy}>
-        <div className="grid2">
-          <div className="form">
-            <Field label="Title" hint="5-255 characters">
-              <input value={t.title} onChange={(e) => set('title', e.target.value)} required minLength={5} maxLength={255} />
-            </Field>
-            <Field label="Description">
-              <textarea value={t.description ?? ''} onChange={(e) => set('description', e.target.value)} maxLength={5000} rows={3} />
-            </Field>
-            <Field label="Address" hint="5-512 characters. The public listing shows the exact address.">
-              <input value={t.address} onChange={(e) => set('address', e.target.value)} required minLength={5} maxLength={512} />
-            </Field>
-            <div className="row">
-              <Field label="Latitude">
-                <input
-                  type="number"
-                  step="any"
-                  min={-90}
-                  max={90}
-                  value={t.location.lat}
-                  onChange={(e) => set('location', { ...t.location, lat: Number(e.target.value) })}
-                  required
-                />
-              </Field>
-              <Field label="Longitude">
-                <input
-                  type="number"
-                  step="any"
-                  min={-180}
-                  max={180}
-                  value={t.location.lng}
-                  onChange={(e) => set('location', { ...t.location, lng: Number(e.target.value) })}
-                  required
-                />
-              </Field>
+      <fieldset disabled={disabled || busy} className="stack-lg">
+        <section className="form-section">
+          <h3>The basics</h3>
+          <Field label="Title" hint="What drivers see first, e.g. “Covered garage next to Indiranagar metro”.">
+            <input value={t.title} onChange={(e) => set('title', e.target.value)} required minLength={5} maxLength={255} />
+          </Field>
+          <Field label="Description" hint="Access instructions, height limits, landmarks. Shared publicly.">
+            <textarea value={t.description ?? ''} onChange={(e) => set('description', e.target.value)} maxLength={5000} rows={4} />
+          </Field>
+        </section>
+
+        <section className="form-section">
+          <h3>Location</h3>
+          <Field label="Street address" hint="Shown on your listing so drivers can find the space.">
+            <input value={t.address} onChange={(e) => set('address', e.target.value)} required minLength={5} maxLength={512} autoComplete="street-address" />
+          </Field>
+          <div className="stack-sm">
+            <div className="row between">
+              <span className="field-label">Pin the exact spot</span>
+              <div className="row">
+                <select
+                  aria-label="Jump to city"
+                  value=""
+                  onChange={(e) => {
+                    const c = CITIES.find((x) => x.name === e.target.value);
+                    if (c) set('location', { lat: c.lat, lng: c.lng });
+                  }}
+                  style={{ width: 'auto' }}
+                >
+                  <option value="">Jump to city…</option>
+                  {CITIES.map((c) => (
+                    <option key={c.name}>{c.name}</option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  icon="locate"
+                  onClick={() =>
+                    navigator.geolocation?.getCurrentPosition((p) => set('location', { lat: Number(p.coords.latitude.toFixed(6)), lng: Number(p.coords.longitude.toFixed(6)) }))
+                  }
+                >
+                  My location
+                </Button>
+              </div>
             </div>
+            <LeafletMap center={t.location} pick={t.location} onPick={(lat, lng) => set('location', { lat, lng })} height={300} zoom={15} />
+            <span className="field-hint">
+              Click the map or drag the pin. {t.location.lat.toFixed(5)}, {t.location.lng.toFixed(5)}
+              {locationNote ? ` · ${locationNote}` : ''}
+            </span>
           </div>
-          <div>
-            <span className="field-label">Click the map to set the location (changing it later sends a published listing back to review)</span>
-            <LeafletMap
-              center={t.location}
-              pick={t.location}
-              onPick={(lat, lng) => set('location', { lat, lng })}
-              height={260}
-            />
+        </section>
+
+        <section className="form-section">
+          <h3>Price and size</h3>
+          <div className="grid-2">
+            <Field label="Price per hour" error={priceError} id="listing-price">
+              <div className="input-group">
+                <span className="addon">₹</span>
+                <input id="listing-price" value={t.pricePerHour} onChange={(e) => set('pricePerHour', e.target.value.replace(/[^\d.]/g, ''))} inputMode="decimal" required />
+              </div>
+            </Field>
+            <Field label="Largest vehicle that fits" hint="Smaller vehicles fit too.">
+              <select value={t.maxVehicleType} onChange={(e) => set('maxVehicleType', e.target.value as ListingTerms['maxVehicleType'])}>
+                {VEHICLE_TYPES.map((v) => (
+                  <option key={v} value={v}>
+                    {VEHICLE_FITS[v]}
+                  </option>
+                ))}
+              </select>
+            </Field>
           </div>
-        </div>
+          <p className="small muted">ParkSmart keeps a 15% service fee; you earn {Number.isFinite(price) ? `₹${(price * 0.85).toFixed(2)}` : '–'} per booked hour.</p>
+        </section>
 
-        <div className="row">
-          <Field label="Price per hour (INR)" hint="5.00 - 2000.00">
-            <input value={t.pricePerHour} onChange={(e) => set('pricePerHour', e.target.value)} required pattern="\d{1,8}(\.\d{1,2})?" />
-          </Field>
-          <Field label="Max vehicle type" hint="Admits this size and smaller">
-            <select value={t.maxVehicleType} onChange={(e) => set('maxVehicleType', e.target.value as VehicleType)}>
-              {VEHICLE_TYPES.map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Time zone (IANA)" hint="Availability rules are in this zone">
-            <input value={t.timeZone} onChange={(e) => set('timeZone', e.target.value)} required maxLength={64} />
-          </Field>
-          <Field label="Buffer minutes" hint="0-120, multiples of 5, blocked after each booking">
-            <input type="number" min={0} max={120} step={5} value={t.bufferMinutes} onChange={(e) => set('bufferMinutes', Number(e.target.value))} />
-          </Field>
-        </div>
-
-        <div className="row">
-          <Field label="Booking mode">
-            <select value={t.instantBook ? 'instant' : 'request'} onChange={(e) => set('instantBook', e.target.value === 'instant')}>
-              <option value="instant">Instant book (confirmed right after payment)</option>
-              <option value="request">Request to book (host approves each booking)</option>
-            </select>
-          </Field>
-          <Field label="Cancellation policy" hint={POLICY_TEXT[t.cancellationPolicy]}>
-            <select value={t.cancellationPolicy} onChange={(e) => set('cancellationPolicy', e.target.value as CancellationPolicy)}>
-              {POLICIES.map((p) => (
-                <option key={p}>{p}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        <div className="field">
-          <span className="field-label">Amenities (max 8)</span>
-          <div className="row wrap">
-            {AMENITIES.map((a) => (
-              <label key={a} className="check">
-                <input type="checkbox" checked={t.amenities.includes(a)} onChange={() => toggle(a)} /> {a}
-              </label>
+        <section className="form-section">
+          <h3>How drivers book</h3>
+          <div className="choice-grid">
+            <button type="button" className={`choice ${t.instantBook ? 'on' : ''}`} onClick={() => set('instantBook', true)}>
+              <Icon name="bolt" />
+              <span>
+                <span className="choice-title">Instant book</span>
+                <br />
+                <span className="choice-text">Confirmed as soon as the driver pays. Most popular with drivers.</span>
+              </span>
+            </button>
+            <button type="button" className={`choice ${!t.instantBook ? 'on' : ''}`} onClick={() => set('instantBook', false)}>
+              <Icon name="checkCircle" />
+              <span>
+                <span className="choice-title">Approve each request</span>
+                <br />
+                <span className="choice-text">You accept or decline within 24 hours (or before arrival).</span>
+              </span>
+            </button>
+          </div>
+          <span className="field-label">Cancellation policy</span>
+          <div className="choice-grid">
+            {POLICIES.map((p) => (
+              <button key={p} type="button" className={`choice ${t.cancellationPolicy === p ? 'on' : ''}`} onClick={() => set('cancellationPolicy', p)}>
+                <span>
+                  <span className="choice-title">{POLICY_META[p].label}</span>
+                  <br />
+                  <span className="choice-text">{POLICY_META[p].long}</span>
+                </span>
+              </button>
             ))}
           </div>
-        </div>
+          <div className="grid-2">
+            <Field label="Gap between bookings" hint="Blocked after each booking, e.g. to move your own car.">
+              <select value={t.bufferMinutes} onChange={(e) => set('bufferMinutes', Number(e.target.value))}>
+                {BUFFERS.map((b) => (
+                  <option key={b} value={b}>
+                    {b === 0 ? 'No gap' : `${b} minutes`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Time zone" hint="Your opening hours are in this time zone.">
+              <select value={t.timeZone} onChange={(e) => set('timeZone', e.target.value)}>
+                {Array.from(new Set([t.timeZone, ...TIME_ZONES])).map((z) => (
+                  <option key={z}>{z}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        </section>
+
+        <section className="form-section">
+          <h3>Amenities</h3>
+          <div className="chips">
+            {AMENITIES.map((a) => (
+              <button key={a} type="button" className={`chip ${t.amenities.includes(a) ? 'on' : ''}`} onClick={() => toggle(a)} aria-pressed={t.amenities.includes(a)}>
+                <Icon name={AMENITY_META[a].icon} size={15} /> {AMENITY_META[a].label}
+              </button>
+            ))}
+          </div>
+        </section>
       </fieldset>
       <ProblemView error={error} />
-      <button type="submit" disabled={disabled || busy}>
-        {submitLabel}
-      </button>
+      <div className="form-actions">
+        <Button type="submit" variant="primary" size="lg" busy={busy} disabled={disabled}>
+          {submitLabel}
+        </Button>
+      </div>
     </form>
   );
 }

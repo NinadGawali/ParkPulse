@@ -11,9 +11,17 @@ export function usePaged<T>(fetchPage: (cursor?: string) => Promise<Page<T>>, de
   const fetchRef = useRef(fetchPage);
   fetchRef.current = fetchPage;
 
+  // New inputs (another tab or filter) must not show the previous list while loading; a plain reload() may.
+  const depsKey = JSON.stringify(deps);
+  const lastKey = useRef(depsKey);
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    if (lastKey.current !== depsKey) {
+      lastKey.current = depsKey;
+      setItems([]);
+      setNext(null);
+    }
     fetchRef
       .current()
       .then((p) => {

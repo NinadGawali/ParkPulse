@@ -1,66 +1,86 @@
 import { useRef, useState } from 'react';
 import { putToStorage } from '../api/endpoints';
 import type { PhotoUploadSlot } from '../api/types';
-import { ProblemView, useAction } from './ui';
+import { Icon } from './Icon';
+import { ProblemView, Spinner, useAction } from './ui';
 
 const TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
-/** Presigned upload in three visible steps: request slot, PUT bytes to object storage, confirm. */
+/**
+ * Presigned upload: ask the API for a slot, PUT the bytes straight to object storage, then confirm (the
+ * server copies and validates the file). Accepts several files (uploaded one after another) when `multiple`.
+ */
 export function PhotoUploader({
   label,
+  hint,
   maxBytes,
+  multiple,
+  disabled,
   createSlot,
   confirm,
   onDone,
 }: {
   label: string;
+  hint?: string;
   maxBytes: number;
+  multiple?: boolean;
+  disabled?: boolean;
   createSlot: (contentType: string, contentLength: number) => Promise<PhotoUploadSlot>;
   confirm: (slot: PhotoUploadSlot) => Promise<unknown>;
   onDone: () => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  const [steps, setSteps] = useState<string[]>([]);
+  const [over, setOver] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const act = useAction();
 
-  const upload = async (file: File) => {
-    setSteps([]);
-    const log = (s: string) => setSteps((cur) => [...cur, s]);
+  const upload = async (files: File[]) => {
     await act.run(async () => {
-      if (!TYPES.includes(file.type)) throw new Error(`Unsupported type ${file.type || 'unknown'}; use jpeg, png or webp.`);
-      if (file.size > maxBytes) throw new Error(`File is ${file.size} bytes; the limit is ${maxBytes}.`);
-      const slot = await createSlot(file.type, file.size);
-      log(`1. Upload slot created (${slot.uploadId ?? slot.photoId}), expires ${slot.expiresAt}`);
-      const put = await putToStorage(slot, file);
-      log(`2. PUT ${file.size} bytes to object storage via ${put.url.split('?')[0]} -> ${put.status}`);
-      await confirm(slot);
-      log('3. Confirmed: the server copied it to a public key and checked type, size and signature.');
-      onDone();
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          setProgress(files.length > 1 ? `Uploading ${i + 1} of ${files.length}…` : 'Uploading…');
+          if (!TYPES.includes(file.type)) throw new Error(`${file.name}: use a JPEG, PNG or WebP image.`);
+          if (file.size > maxBytes) throw new Error(`${file.name} is larger than ${Math.round(maxBytes / 1024 / 1024)} MB.`);
+          const slot = await createSlot(file.type, file.size);
+          await putToStorage(slot, file);
+          await confirm(slot);
+          onDone();
+        }
+      } finally {
+        setProgress(null);
+        if (input.current) input.current.value = '';
+      }
     });
-    if (input.current) input.current.value = '';
+  };
+
+  const pick = (list: FileList | null) => {
+    const files = Array.from(list ?? []);
+    if (files.length) void upload(multiple ? files : files.slice(0, 1));
   };
 
   return (
-    <div className="uploader">
-      <label className="field-label">{label}</label>
-      <input
-        ref={input}
-        type="file"
-        accept={TYPES.join(',')}
-        disabled={act.busy}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void upload(f);
+    <div className="stack-sm">
+      <label
+        className={`dropzone ${over ? 'over' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setOver(true);
         }}
-      />
-      {steps.length > 0 && (
-        <ol className="steps">
-          {steps.map((s) => (
-            <li key={s}>{s}</li>
-          ))}
-        </ol>
-      )}
-      <ProblemView error={act.error} />
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          if (!disabled && !act.busy) pick(e.dataTransfer.files);
+        }}
+        aria-disabled={disabled || act.busy}
+      >
+        <input ref={input} type="file" accept={TYPES.join(',')} multiple={multiple} disabled={disabled || act.busy} onChange={(e) => pick(e.target.files)} />
+        {progress ? <Spinner /> : <Icon name="camera" size={28} />}
+        <strong>{progress ?? label}</strong>
+        {!progress && <span className="small">{hint ?? 'Drag and drop, or click to choose. JPEG, PNG or WebP.'}</span>}
+      </label>
+      <ProblemView error={act.error} compact />
     </div>
   );
 }

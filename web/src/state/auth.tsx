@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { decodeJwt, type Tokens } from '../api/client';
-import { tokenStore } from '../api';
+import { api, tokenStore } from '../api';
 import { auth } from '../api/endpoints';
 import type { AccountSummary, Role } from '../api/types';
 
 interface AuthState {
+  /** False until a stored session has been resumed (or found absent); render a splash meanwhile. */
+  ready: boolean;
   loggedIn: boolean;
   accountId: string | null;
   roles: Role[];
@@ -13,7 +15,8 @@ interface AuthState {
   reloadAccount(): Promise<AccountSummary | null>;
   login(email: string, password: string): Promise<void>;
   logout(): Promise<void>;
-  accessToken: string | null;
+  /** Rotates the refresh token so a new role (e.g. HOST) shows up in the access token. */
+  refreshRoles(): Promise<void>;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -22,7 +25,7 @@ let cachedRaw: string | null = null;
 let cachedTokens: Tokens | null = null;
 function snapshot(): Tokens | null {
   const t = tokenStore.get();
-  const raw = t ? t.accessToken + t.refreshToken : null;
+  const raw = t ? t.accessToken + '|' + t.refreshToken : null;
   if (raw !== cachedRaw) {
     cachedRaw = raw;
     cachedTokens = t;
@@ -32,8 +35,15 @@ function snapshot(): Tokens | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const tokens = useSyncExternalStore(tokenStore.subscribe, snapshot);
-  const claims = useMemo(() => (tokens ? decodeJwt(tokens.accessToken) : null), [tokens]);
+  const claims = useMemo(() => (tokens?.accessToken ? decodeJwt(tokens.accessToken) : null), [tokens]);
   const [account, setAccount] = useState<AccountSummary | null>(null);
+  const [ready, setReady] = useState(() => !tokenStore.get() || !!tokenStore.get()?.accessToken);
+
+  // Resume a stored session: one refresh turns the stored refresh token into an access token.
+  useEffect(() => {
+    if (ready) return;
+    void api.refresh().finally(() => setReady(true));
+  }, [ready]);
 
   const reloadAccount = useCallback(async () => {
     if (!tokenStore.get()) {
@@ -57,12 +67,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(() => {
     const roles = (claims?.roles ?? []).filter((r): r is Role => ['DRIVER', 'HOST', 'ADMIN'].includes(r));
+    // Logged in once an access token is held; a refresh token alone is a session still being resumed.
+    const loggedIn = !!tokens && !!claims;
     return {
-      loggedIn: !!tokens,
+      ready,
+      loggedIn,
       accountId: claims?.sub ?? null,
       roles,
       account,
-      accessToken: tokens?.accessToken ?? null,
       hasRole: (r) => roles.includes(r),
       reloadAccount,
       login: async (email, password) => {
@@ -72,8 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await auth.logout();
         setAccount(null);
       },
+      refreshRoles: async () => {
+        await api.refresh();
+        await reloadAccount();
+      },
     };
-  }, [tokens, claims, account, reloadAccount]);
+  }, [ready, tokens, claims, account, reloadAccount]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

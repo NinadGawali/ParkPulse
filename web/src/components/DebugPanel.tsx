@@ -42,7 +42,7 @@ export function DebugPanel() {
   return (
     <aside className={`debug ${open ? 'open' : ''}`} aria-label="Last request and response">
       <button type="button" className="debug-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span>{open ? '▼' : '▲'} Last request / response</span>
+        <span>{open ? '▼' : '▲'} Dev: last request / response</span>
         {last ? (
           <span className="debug-last">
             <span className={`pill ${statusClass(last.status)}`}>{last.status || 'ERR'}</span> {last.method} {last.url} ({last.ms} ms)
@@ -54,7 +54,7 @@ export function DebugPanel() {
       {open && (
         <div className="debug-body">
           <div className="debug-list">
-            <button type="button" className="link" onClick={clearDebug}>
+            <button type="button" className="link-btn" style={{ padding: 6 }} onClick={clearDebug}>
               clear
             </button>
             {entries.map((e) => (

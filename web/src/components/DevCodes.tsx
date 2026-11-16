@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchDevCodes, type DevCode } from '../api/endpoints';
-import { Card, Copy } from './ui';
+import { Copy } from './ui';
 
 /**
- * LOCAL ONLY: lists the one-time codes Notification wrote to logs/notification.log ("DEV ONLY body").
- * Served by a Vite dev-server middleware (web/vite.config.ts); not available in a production build.
- * Emails are masked in the log, so match by time and purpose (the newest matching code is the live one).
+ * DEV SERVER ONLY: lists the one-time codes Notification wrote to logs/notification.log ("DEV ONLY body"),
+ * so verification can be finished without a real inbox. Callers render it only when import.meta.env.DEV.
  */
 export function DevCodes({ purpose, onPick }: { purpose?: 'email' | 'phone' | 'password reset'; onPick?: (c: DevCode) => void }) {
   const [items, setItems] = useState<DevCode[]>([]);
@@ -24,48 +23,31 @@ export function DevCodes({ purpose, onPick }: { purpose?: 'email' | 'phone' | 'p
     const id = setInterval(() => void load(), 4000);
     return () => clearInterval(id);
   }, [load]);
-  const shown = purpose ? items.filter((i) => i.purpose === purpose) : items;
+  const shown = (purpose ? items.filter((i) => i.purpose === purpose) : items).slice(0, purpose ? 3 : 15);
   return (
-    <Card
-      title="Dev helper: recent codes from the Notification log"
-      actions={
-        <button type="button" className="link" onClick={() => void load()}>
-          refresh
+    <div className="devbox">
+      <div className="row between">
+        <strong>Dev only · codes from logs/notification.log</strong>
+        <button type="button" className="link-btn" onClick={() => void load()}>
+          Refresh
         </button>
-      }
-    >
-      {!info.available && (
-        <p className="muted">
-          Could not read <code>logs/notification.log</code> ({info.error}). Run the dev server from <code>web/</code> inside the repo, with the
-          stack started by <code>infra/scripts/run-local.sh</code>. Or <code>grep "DEV ONLY" logs/notification.log</code>.
-        </p>
-      )}
-      {info.available && shown.length === 0 && <p className="muted">No codes logged yet. Request one, it appears here within a few seconds.</p>}
+      </div>
+      {!info.available && <p className="muted">Could not read the log ({info.error}). Start the stack with infra/scripts/run-local.sh.</p>}
+      {info.available && shown.length === 0 && <p className="muted">No codes yet. Request one; it shows up here within seconds.</p>}
       {shown.length > 0 && (
         <table className="table">
-          <thead>
-            <tr>
-              <th>Logged at</th>
-              <th>For</th>
-              <th>Sent to (masked)</th>
-              <th>Code / token</th>
-              <th />
-            </tr>
-          </thead>
           <tbody>
-            {shown.slice(0, purpose ? 5 : 15).map((c, i) => (
+            {shown.map((c, i) => (
               <tr key={c.at + c.code + i}>
-                <td>{c.at.replace('T', ' ').replace(/\.\d+Z$/, 'Z')}</td>
+                <td className="nowrap">{new Date(c.at).toLocaleTimeString()}</td>
                 <td>{c.purpose}</td>
+                <td className="muted">{c.to}</td>
                 <td>
-                  {c.channel} {c.to}
-                </td>
-                <td>
-                  <code>{c.code.length > 14 ? c.code.slice(0, 14) + '...' : c.code}</code> <Copy text={c.code} />
+                  <code>{c.code.length > 14 ? c.code.slice(0, 14) + '…' : c.code}</code> <Copy text={c.code} />
                 </td>
                 <td>
                   {onPick && (
-                    <button type="button" onClick={() => onPick(c)}>
+                    <button type="button" className="btn btn-sm" onClick={() => onPick(c)}>
                       Use
                     </button>
                   )}
@@ -75,6 +57,6 @@ export function DevCodes({ purpose, onPick }: { purpose?: 'email' | 'phone' | 'p
           </tbody>
         </table>
       )}
-    </Card>
+    </div>
   );
 }
