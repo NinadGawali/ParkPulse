@@ -1,108 +1,104 @@
-# ParkSmart web test console
+# ParkSmart web app
 
-A React 18 + TypeScript + Vite app for manually exercising every ParkSmart flow in a browser against the
-local stack. It is a **test console, not a product front end**: tokens live in `localStorage`, request bodies
-are shown in a debug panel, and a dev-only helper reads the Notification log. Never point it at a shared or
-production environment.
+The ParkSmart front end for drivers, hosts and admins: React 18 + TypeScript (strict) + Vite + React Router, plain CSS
+(design tokens in `src/styles.css`), Leaflet maps. It talks to the platform only through the gateway, on the same origin
+(a proxy in development, nginx in production), so the gateway needs no CORS.
 
-## Start
+## What's in it
+
+| Area | Pages |
+|---|---|
+| Everyone | Home (city + time search, featured spaces), search (list + map with price pins, "search this area", filters in the URL), listing page (gallery, amenities, opening hours, policy, map, reviews, host), help, terms, privacy |
+| Account | Sign up (with email-code verification step), log in, forgot/reset password, settings: profile + photo, email/phone verification, vehicles, notification preferences, notification bell + page |
+| Drivers | Reserve widget (15-minute grid, live total, vehicle size check), checkout with card form and hold countdown, booking page with progress timeline, check-in/out, directions, cancel with refund preview, reviews; My bookings |
+| Hosts | Become a host, dashboard (setup checklist, earnings, requests, upcoming), listing wizard → photos (drag and drop, cover photo) → opening hours → submit, pause/resume/archive, blocked dates, booking requests (accept/decline), earnings + payout accounts |
+| Admins | Listing review queue → preview with approve/reject bar, booking support case with goodwill refund, hide reviews (also inline on listing pages) |
+
+Every API error is shown as a friendly message built from the RFC 7807 problem (field errors, and the correlation ID as a support reference).
+
+## Run it
 
 ```bash
-# 1. stack (repo root, Git Bash): see "Running locally" in ../README.md
-bash infra/scripts/infra-up.sh && bash infra/scripts/run-local.sh      # skip if already running
-# 2. console
+# backend (repo root, Git Bash): see "Running locally" in ../README.md
+bash infra/scripts/infra-up.sh && bash infra/scripts/run-local.sh
+
 cd web
 npm install
-npm run dev                  # http://localhost:5173
-# or, to bypass the gateway's per-IP login/register limits (see below):
-npm run dev:direct-auth
+npm run dev               # http://localhost:5173 (dev server with proxy and dev tools)
+npm run dev:direct-auth   # same, but /api/v1/auth/* goes straight to Identity (skips the per-IP login limit)
+npm run build             # strict type-check + production bundle in dist/
+npm run preview           # serve dist/ on :4173 with the same proxy
+npm run test              # Vitest
 ```
 
-`npm run build` type-checks (`tsc` strict) and builds `dist/`. `npm run test` runs Vitest (client, helpers, components).
-`node scripts/e2e-proxy.mjs [--complete]` runs an end-to-end check of the whole stack **through the dev proxy**.
-
-## How it talks to the backend
-
-The Vite dev server proxies, so the gateway needs no CORS changes:
-
-| Browser path | Goes to |
-|---|---|
-| `/api/**`, `/admin/v1/**`, `/.well-known/**` | gateway `http://localhost:8080` |
-| `/_storage/**` | object storage `http://localhost:9000` (presigned upload URLs are rewritten to this; storage sends no CORS headers) |
-| `/__dev/codes` | dev-server middleware (`vite.config.ts`) that parses `logs/notification.log` (dev server only, never in a build) |
-
-Only `/admin/v1` is proxied, not `/admin`: the console has its own `/admin/moderation` etc. routes.
-
-Gateway rate limits: login is limited to ~5 per IP then one per 3 minutes, register and code requests ~5 per
-hour. A multi-role test session hits that fast (the UI shows a hint on 429). `npm run dev:direct-auth` sends
-`/api/v1/auth/*` straight to Identity `:8081`, exactly like `infra/scripts/smoke-test.sh`; everything else still
-goes through the gateway. Env overrides: `GATEWAY_URL`, `IDENTITY_URL`, `STORAGE_URL`.
-
-## What is covered (role-aware menu)
-
-- **Anyone**: search (geo + filters + time window, cursor paging, Leaflet/OpenStreetMap map; map tiles need internet), listing detail with reviews, public reviews, Dev helper.
-- **Auth**: register, login, logout, transparent refresh-token rotation (single-flight, proactive before expiry, retry on 401), email and phone verification, forgot/reset password, become host (rotates the token so the JWT carries HOST).
-- **Profile** (all): display name, bio, city, photo (presigned PUT then confirm, three steps shown), notification preferences. **Vehicles** (driver): CRUD, primary. **Payout account** (host).
-- **Host**: create/edit listing (map picker, price, amenities, instant vs request, cancellation policy, buffer; PATCH with `If-Match`), photos, weekly availability (24/7 preset), blackouts, submit, pause, resume, archive, status list; booking requests with approve/decline, host cancel; earnings and payouts.
-- **Driver**: book with `Idempotency-Key` (same body = same key = replay `200`; changed body = new key), pay with the fake processor, my bookings with status polling, cancel with a refund-tier preview, check-in/out, reviews.
-- **Reviews**: both directions from the completed booking page; listing/driver lists and summaries.
-- **Notifications**: feed, unread badge (polled every 20 s), mark read / read all.
-- **Admin**: moderation queue (approve/reject), booking case, manual refund with `Idempotency-Key`, hide review. A page lists what has **no backend endpoint**: account suspend, disputes, payout holds (see `docs/PROGRESS.md`, phase 10 gaps).
-- Every failed call renders an RFC 7807 problem (status, title, detail, type, correlationId, field errors); a collapsible debug panel at the bottom shows the last requests and responses (secrets such as passwords and tokens are redacted).
-
-The public booking quote is an **internal** endpoint (`/internal/**` is never routed by the gateway), so the console shows a
-client-side estimate; Booking fetches the authoritative quote itself.
-
-## Verification codes (local)
-
-Email and SMS are "sent" by Notification writing them to `logs/notification.log` (`DEV ONLY body`, addresses masked). The in-app
-feed redacts codes on purpose. The console's **Dev helper** page (and the Account / password pages) lists the newest codes
-by reading that file through the dev server. Password reset uses the opaque token logged the same way (not a 6-digit code).
-By hand: `grep -a "DEV ONLY" logs/notification.log | tail`.
-
-## Becoming ADMIN (local only)
-
-There is no public way. `infra/scripts/smoke-test.sh` inserts an `ADMIN` row into the identity database through the postgres
-container; `web/scripts/make-admin.sh` does the same for one existing account:
+### Production image (nginx)
 
 ```bash
-bash web/scripts/make-admin.sh you@example.com     # from the repo root, Git Bash
+docker compose --env-file .env -f infra/docker-compose.yml --profile web up -d --build web   # http://localhost:3000
 ```
 
-Then log out and in again (roles are baked into the JWT). It validates the email, talks only to the local docker container
-(`PARKSMART_POSTGRES_CONTAINER`, default `parksmart-postgres-1`), upgrades an existing account and never creates one. Admins cannot
-approve their own listings, so use a second account as the host.
+`web/Dockerfile` builds the bundle and serves it from `nginxinc/nginx-unprivileged` (non-root, `HEALTHCHECK` on `/healthz`).
+nginx serves the SPA (hashed assets cached for a year, `index.html` never), proxies `/api`, `/admin/v1` and `/.well-known` to
+the gateway, and sets security headers including a Content-Security-Policy. Runtime settings (environment variables):
 
-## Reaching COMPLETED and reviews fast
+| Variable | Default | Meaning |
+|---|---|---|
+| `GATEWAY_URL` | `http://gateway:8080` | Gateway upstream (compose uses `host.docker.internal:8080`, since services run on the host locally) |
+| `STORAGE_URL`, `STORAGE_SIGNED_HOST` | `http://object-storage:9000`, `localhost:9000` | Local S3 stand-in for presigned uploads via `/_storage` (signature covers the Host header) |
+| `MEDIA_ORIGINS` | `http://localhost:9000` | Where photos are served from (CSP `img-src`); a CloudFront origin on AWS |
+| `UPLOAD_ORIGINS` | empty | Extra CSP `connect-src` origins, e.g. the S3 bucket origin for direct presigned uploads on AWS |
+| `MAP_TILE_ORIGIN` | `https://tile.openstreetmap.org` | Map tile origin (CSP) |
 
-Booking's rules (from `Booking.java`): start on a 15-minute boundary and at least 15 minutes from now; duration 30 minutes to 30 days;
-**check-in is allowed from 15 minutes before the start until 30 minutes after**; **check-out has no time gate** and moves
-`CHECKED_IN` to `COMPLETED` at once. So no config change or backdoor is needed, and the wait is at most about 15 minutes:
+Build arguments: `VITE_TEST_MODE` (default `true`: test-mode banner, test cards, test payout accounts; set `false` with a real
+payment processor) and `VITE_MAP_TILE_URL` (OpenStreetMap's public tiles are for light use only; use a tile provider in production).
 
-1. Host publishes a listing with the **24/7** availability preset.
-2. Driver opens it and clicks **Soonest slot (fast lane)** (a 30-minute window on the next 15-minute boundary that is 17+ minutes away). Book, then pay with `fake_ok` (request-to-book listings also need the host to approve).
-3. The booking page shows a countdown to when check-in opens, then enables **Check in**; click **Check out** straight away.
-4. Booking emits `BookingCompleted`; Review learns it over Kafka (a 404 on submit for a few seconds means "not seen yet": retry). Driver reviews the listing, host reviews the driver; duplicates are 409.
+On AWS the same image can run on ECS behind the ALB (or the `dist/` bundle can go to S3 + CloudFront with path routing for
+`/api/*`). The gateway trusts `X-Forwarded-For` under the `aws` profile, which is right only when nothing but the ALB/nginx can
+reach it.
 
-Left alone, the timers (30 s interval, `parksmart.booking.timers.interval`) complete a checked-in booking at its end time and mark a missed
-check-in `NO_SHOW` 30 minutes after the start. The same steps are in the UI under Dev helper.
+## How things work
 
-## Fake payment tokens
+- **Session**: the access token is kept in memory only; the refresh token is in `localStorage` so a reload or new tab resumes the
+  session with one refresh call (a splash waits for it). Refresh rotation is single-flight and proactive before expiry; logging out
+  in one tab ends the others. Moving the refresh token to an httpOnly cookie is a phase-11 hardening item (needs Identity changes).
+- **Booking**: the reserve widget mirrors Booking's rules (15-minute grid, at least 15 minutes ahead, 30 min to 30 days) to explain
+  them up front; the server stays authoritative. The total is an estimate (hours × price); Booking prices from its own quote.
+  Each distinct request gets one `Idempotency-Key`, so a double click or retry replays the same booking.
+- **Payments (test mode)**: card details never leave the browser; the form turns a test card into the FakeProcessor token and only
+  the token is sent, as with a real tokenizing processor. `4242 4242 4242 4242` succeeds, `4000 0000 0000 0002` is declined,
+  `4000 0000 0000 0341` authorizes and then fails to capture. Any future expiry and any CVC.
+- **Eventual consistency**: payment intents, review eligibility and search results arrive over Kafka. The UI polls while a booking
+  can still change, retries the payment-intent lookup until it exists, and says "try again in a few seconds" where that applies.
+- **Lazy loading**: the home page and auth are in the main bundle; search, listing, bookings, host, settings and admin (and Leaflet)
+  load on demand.
 
-`fake_ok` authorizes (capture on confirmation). `fake_decline` fails with `card_declined` (intent FAILED, booking EXPIRED; book again).
-`fake_capture_fail` authorizes but the capture is rejected on confirmation (booking PAYMENT_FAILED).
+## Development tools (dev server only)
+
+`npm run dev` adds a request/response debug panel at the bottom, a **Dev tools** page (`/dev`, in the user menu) and inline
+"codes from logs/notification.log" helpers on the verification and password-reset screens, served by a dev-server middleware
+(`/__dev/codes`). None of these exist in `npm run build` output (checked: no dev strings in `dist/`).
+
+- Verification and reset codes are "sent" by Notification writing them to `logs/notification.log`; the in-app feed redacts them.
+- Demo users and data: `node web/scripts/seed-demo.mjs` (accounts and passwords in [../RUNNING.md](../RUNNING.md)).
+- ADMIN locally: `bash web/scripts/make-admin.sh you@example.com`, then log out and in. Admins cannot approve their own listings.
+- Reaching COMPLETED fast: publish a listing with 24/7 hours, book the soonest slot, pay with 4242…, check in when it opens
+  (15 minutes before arrival), check out at once; both sides can then review.
+- `node scripts/e2e-proxy.mjs [--complete]` runs ~90 API assertions through the dev proxy (register → verify → host → listing →
+  approve → search → book → pay → cancel/complete → reviews → admin).
 
 ## Tests
 
-- `npm run test` (Vitest + jsdom): API client (refresh rotation, single-flight, proactive refresh, auth loss, problem parsing, idempotency keys incl. reuse across a 401 retry, redaction), helpers (fast-lane slot, refund tiers, storage URL rewrite), components (problem display, role-aware menu, debug panel).
-- `node scripts/e2e-proxy.mjs [--complete]` (needs the dev server, preferably `dev:direct-auth`, and the running stack): ~80 assertions through the proxy: register, verify, host, listing, approve, search, book, replay, pay, decline, cancel, notifications, admin case/refund, password reset. `--complete` also waits for the check-in window, then check-in, check-out, both reviews, duplicate/stranger rejections and admin hide.
+`npm run test`: API client (refresh rotation, single-flight, proactive refresh, auth loss, problem parsing, idempotency keys,
+redaction), session storage (access token never persisted), helpers (booking window rules, refund tiers, test cards, Luhn/expiry,
+money and duration formatting, storage URL rewrite), components (problem display, status labels, header by role, route guards,
+debug panel).
 
 ## Layout
 
 ```
-src/api/        client.ts (fetch wrapper), endpoints.ts (typed calls per service), types.ts (from docs/openapi)
-src/state/      auth context (JWT claims, roles), debug log store
-src/components/ layout/nav, problem + debug panels, forms, Leaflet map, uploader, dev codes
-src/pages/      one file per area (auth, account, profile, host listings, bookings, search, admin, misc, dev helper)
-scripts/        make-admin.sh, e2e-proxy.mjs
+src/api/         client.ts (fetch wrapper, refresh, problems), endpoints.ts (typed calls), types.ts (from docs/openapi), index.ts (session store)
+src/state/       auth (session bootstrap, roles), cache (listing/profile lookups), debug log
+src/components/  Layout (header, menus, footer, guards), ui (primitives, hooks, toasts), Icon, LeafletMap, WhenPicker, ListingCard, ListingForm, PhotoUploader, dev tools
+src/pages/       Home, Search, Listing, Booking(s), Host, ListingManage, Settings, Admin, Auth, Misc, Dev
+nginx/           production server config templates
 ```

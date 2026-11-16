@@ -102,22 +102,27 @@ Contracts: [identity](docs/openapi/identity.yaml), [profile](docs/openapi/profil
 2. `PUT` the bytes to `uploadUrl` with those headers (directly to object storage).
 3. `POST /api/v1/profiles/me/photo/uploads/{uploadId}/confirm`: the service checks size, type and the image signature, sets the photo, and emits `ProfileUpdated{hasPhoto=true}`.
 
+> **Just want to run it?** See [RUNNING.md](RUNNING.md): start-up steps, demo users and passwords, test cards and what to try.
+
 ## Frontend
-`web/` is a React 18 + TypeScript + Vite **manual test console** for the local stack (not a product UI): role-aware menus
-for auth, profile, host, driver, reviews, notifications and admin, an RFC 7807 problem display, and a collapsible
-last-request/response panel. Details in [web/README.md](web/README.md).
+`web/` is the ParkSmart web app for drivers, hosts and admins (React 18 + TypeScript + Vite): search with a map, listing
+pages, booking and test-mode checkout, check-in/out, reviews, a host dashboard with a listing wizard, earnings and payouts,
+account settings, and an admin console. Details in [web/README.md](web/README.md).
 
 ```bash
 cd web && npm install
 npm run dev                # http://localhost:5173 (stack must be running: infra/scripts/run-local.sh)
 npm run dev:direct-auth    # same, but /api/v1/auth/* goes straight to Identity (skips the gateway login/register limits)
 npm run build && npm run test
+bash infra/scripts/infra-up.sh --profile web     # production image (nginx) on http://localhost:3000
 bash web/scripts/make-admin.sh you@example.com   # local-only ADMIN grant (same trick as smoke-test.sh)
+node web/scripts/seed-demo.mjs                   # demo users and data (see RUNNING.md)
 ```
 
-The Vite dev server proxies `/api` and `/admin/v1` to the gateway (no CORS changes) and presigned uploads to object storage.
-Verification codes are shown by the console's Dev helper (it reads `logs/notification.log`). The fastest legitimate way to a
-COMPLETED booking: book the "soonest slot" (check-in opens 15 minutes before start), check in, check out (no time gate), then review.
+The browser only talks to its own origin: the Vite dev server (development) or nginx (production image) proxies `/api` and
+`/admin/v1` to the gateway and presigned uploads to object storage, so the gateway needs no CORS. Payments run in test mode
+(card `4242 4242 4242 4242`). The dev server adds a debug panel and a Dev tools page that reads verification codes from
+`logs/notification.log`; neither exists in the production build.
 
 ## Layout
 ```
@@ -128,7 +133,7 @@ shared/common-security  JWT resource-server support, roles, CurrentAccount
 services/               one module per service
 tools/                  build-time contract validation
 infra/                  docker-compose, Postgres init, local env script
-web/                    React + Vite manual test console (local only)
+web/                    React + Vite web app (drivers, hosts, admins); nginx image
 docs/                   design docs, PROGRESS.md, openapi/, plans/
 .claude/                Claude Code settings, hooks, subagents, slash commands
 .githooks/              commit-msg hook
