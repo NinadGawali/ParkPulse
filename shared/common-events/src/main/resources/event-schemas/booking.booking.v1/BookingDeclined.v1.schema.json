@@ -1,0 +1,33 @@
+{
+  "type" : "object",
+  "properties" : {
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "declinedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "driverAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "reason" : {
+      "type" : "string"
+    }
+  },
+  "required" : [ "bookingId", "declinedAt", "driverAccountId", "hostAccountId", "listingId", "reason" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/booking.booking.v1/BookingDeclined.v1.schema.json",
+  "title" : "BookingDeclined v1",
+  "x-topic" : "booking.booking.v1"
+}

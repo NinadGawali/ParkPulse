@@ -1,0 +1,59 @@
+# Review Service. Every host, credential and secret comes from the environment (12-factor);
+# missing values fail startup instead of falling back to defaults.
+spring:
+  application:
+    name: review-service
+  datasource:
+    url: ${REVIEW_DB_URL}
+    username: ${REVIEW_DB_USER}
+    password: ${REVIEW_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${REVIEW_DB_POOL_SIZE:10}
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        delivery.timeout.ms: 30000
+    consumer:
+      group-id: review-service
+      auto-offset-reset: earliest
+  mvc:
+    problemdetails:
+      enabled: false   # common-web provides the handler
+
+server:
+  port: ${REVIEW_PORT:8088}
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+parksmart:
+  security:
+    jwt:
+      issuer: ${IDENTITY_ISSUER}
+      audience: parksmart-api
+      jwks-uri: ${IDENTITY_JWKS_URI}
+  kafka:
+    partitions: 3
+    replication-factor: 1

@@ -1,0 +1,23 @@
+# Testcontainers supply the real connection details via @ServiceConnection; these placeholders
+# only satisfy the required environment variables of application.yml.
+NOTIFICATION_DB_URL: jdbc:postgresql://overridden-by-testcontainers/notification
+NOTIFICATION_DB_USER: test
+NOTIFICATION_DB_PASSWORD: test
+KAFKA_BOOTSTRAP_SERVERS: overridden-by-testcontainers:9092
+IDENTITY_ISSUER: https://identity.parksmart.test
+IDENTITY_JWKS_URI: http://localhost:1/unused-tests-provide-a-decoder
+
+parksmart:
+  notification:
+    email: log
+    sms: log
+    dispatch:
+      enabled: false   # tests run the dispatcher directly
+  kafka:
+    consumer:
+      max-attempts: 2
+
+logging:
+  structured:
+    format:
+      console: ""

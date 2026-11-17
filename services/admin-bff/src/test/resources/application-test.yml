@@ -1,0 +1,14 @@
+# Tests point the downstream URLs at in-process stub servers (see AdminBffIT); these placeholders
+# only satisfy the required environment variables of application.yml.
+IDENTITY_ISSUER: https://identity.parksmart.test
+IDENTITY_JWKS_URI: http://localhost:1/unused-tests-provide-a-decoder
+LISTING_URI: http://localhost:1
+PROFILE_URI: http://localhost:1
+BOOKING_URI: http://localhost:1
+PAYMENT_URI: http://localhost:1
+REVIEW_URI: http://localhost:1
+
+logging:
+  structured:
+    format:
+      console: ""

@@ -1,0 +1,48 @@
+{
+  "type" : "object",
+  "properties" : {
+    "blockedUntil" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "confirmedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "currency" : {
+      "type" : "string"
+    },
+    "driverAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "endTime" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "startTime" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "totalAmount" : {
+      "type" : "string"
+    }
+  },
+  "required" : [ "blockedUntil", "bookingId", "confirmedAt", "currency", "driverAccountId", "endTime", "hostAccountId", "listingId", "startTime", "totalAmount" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/booking.booking.v1/BookingConfirmed.v1.schema.json",
+  "title" : "BookingConfirmed v1",
+  "x-topic" : "booking.booking.v1"
+}

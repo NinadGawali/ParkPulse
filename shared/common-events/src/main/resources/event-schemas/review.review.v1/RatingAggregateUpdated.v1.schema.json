@@ -1,0 +1,27 @@
+{
+  "type" : "object",
+  "properties" : {
+    "avgRating" : {
+      "type" : "string"
+    },
+    "reviewCount" : {
+      "type" : "integer"
+    },
+    "targetId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "targetType" : {
+      "type" : "string"
+    },
+    "updatedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "avgRating", "reviewCount", "targetId", "targetType", "updatedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/review.review.v1/RatingAggregateUpdated.v1.schema.json",
+  "title" : "RatingAggregateUpdated v1",
+  "x-topic" : "review.review.v1"
+}

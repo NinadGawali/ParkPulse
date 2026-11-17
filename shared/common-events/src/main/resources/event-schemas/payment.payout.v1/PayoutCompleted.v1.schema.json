@@ -1,0 +1,36 @@
+{
+  "type" : "object",
+  "properties" : {
+    "amount" : {
+      "type" : "string"
+    },
+    "completedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "currency" : {
+      "type" : "string"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "payoutId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "periodEnd" : {
+      "type" : "string",
+      "format" : "date"
+    },
+    "periodStart" : {
+      "type" : "string",
+      "format" : "date"
+    }
+  },
+  "required" : [ "amount", "completedAt", "currency", "hostAccountId", "payoutId", "periodEnd", "periodStart" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/payment.payout.v1/PayoutCompleted.v1.schema.json",
+  "title" : "PayoutCompleted v1",
+  "x-topic" : "payment.payout.v1"
+}

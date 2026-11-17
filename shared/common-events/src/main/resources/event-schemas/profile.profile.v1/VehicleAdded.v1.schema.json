@@ -1,0 +1,25 @@
+{
+  "type" : "object",
+  "properties" : {
+    "addedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "ownerAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "vehicleId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "vehicleType" : {
+      "type" : "string"
+    }
+  },
+  "required" : [ "addedAt", "ownerAccountId", "vehicleId", "vehicleType" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/profile.profile.v1/VehicleAdded.v1.schema.json",
+  "title" : "VehicleAdded v1",
+  "x-topic" : "profile.profile.v1"
+}

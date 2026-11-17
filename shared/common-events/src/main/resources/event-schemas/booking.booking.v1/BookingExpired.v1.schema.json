@@ -1,0 +1,33 @@
+{
+  "type" : "object",
+  "properties" : {
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "driverAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "expiredAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "fromStatus" : {
+      "type" : "string"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "bookingId", "driverAccountId", "expiredAt", "fromStatus", "hostAccountId", "listingId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/booking.booking.v1/BookingExpired.v1.schema.json",
+  "title" : "BookingExpired v1",
+  "x-topic" : "booking.booking.v1"
+}

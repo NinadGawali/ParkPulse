@@ -1,0 +1,23 @@
+# AWS (ECS/EKS). All values are injected as environment variables from Secrets Manager / SSM:
+# PROFILE_DB_URL (must use sslmode=verify-full), PROFILE_DB_USER, PROFILE_DB_PASSWORD,
+# KAFKA_BOOTSTRAP_SERVERS (MSK, TLS listener), IDENTITY_ISSUER, IDENTITY_JWKS_URI,
+# PROFILE_PHOTOS_BUCKET, PROFILE_PHOTOS_PUBLIC_BASE_URL (CloudFront), S3_REGION.
+# S3 credentials come from the task role (no static keys).
+spring:
+  kafka:
+    # TLS to MSK. IAM/SASL auth is added with the Terraform phase (aws-msk-iam-auth).
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:SSL}
+
+parksmart:
+  profile:
+    allow-fake-processor: false
+  storage:
+    endpoint: ""
+    path-style-access: false
+    access-key: ""
+    secret-key: ""
+    create-bucket: false
+  require-db-tls: true
+  kafka:
+    replication-factor: 3

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Removes AI attribution lines from commit messages.
+# Backstop in case Claude Code attribution settings ever regress.
+# Enable once per clone: git config core.hooksPath .githooks
+
+msg_file="$1"
+pattern='(co-authored-by:.*(claude|anthropic))|(generated with.*claude)'
+
+if grep -qiE "$pattern" "$msg_file"; then
+  tmp="$msg_file.tmp"
+  grep -viE "$pattern" "$msg_file" > "$tmp"
+  # Drop trailing blank lines left behind by the removed trailer.
+  sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp" > "$msg_file"
+  rm -f "$tmp"
+  echo "commit-msg hook: removed AI attribution line(s) from the commit message." >&2
+fi
+
+# Refuse a message that is empty after stripping (ignoring comments).
+if ! grep -v '^#' "$msg_file" | grep -q '[^[:space:]]'; then
+  echo "commit-msg hook: commit message is empty after removing attribution lines." >&2
+  exit 1
+fi
+
+exit 0

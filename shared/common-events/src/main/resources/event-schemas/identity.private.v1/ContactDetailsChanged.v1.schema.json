@@ -1,0 +1,24 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "changedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "email" : {
+      "type" : "string"
+    },
+    "verifiedPhone" : {
+      "type" : [ "string", "null" ]
+    }
+  },
+  "required" : [ "accountId", "changedAt", "email", "verifiedPhone" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/identity.private.v1/ContactDetailsChanged.v1.schema.json",
+  "title" : "ContactDetailsChanged v1",
+  "x-topic" : "identity.private.v1"
+}

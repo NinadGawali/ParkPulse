@@ -1,0 +1,316 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart Admin BFF
+  version: 1.0.0
+  description: |
+    Composed back-office views. Owns **no data**: every response is built at request time by
+    calling the owning services' REST endpoints with the caller's own access token forwarded
+    (so each service still enforces its own ADMIN and ownership rules).
+
+    - Every operation requires the ADMIN role (403 `forbidden` for DRIVER/HOST).
+    - Gateway routing: only `/admin/v1/moderation/**` and `/admin/v1/bookings/**` reach this BFF.
+      `/admin/v1/listings/**`, `/admin/v1/payments/**` and `/admin/v1/reviews/**` stay routed to
+      their owning services.
+    - Downstream calls have short timeouts (default 2 s, no redirects followed). An unreachable or
+      failing **primary** service returns 503 `<service>-unavailable`. Downstream 4xx problems are
+      passed through (status, type, title, detail). In composed views a failing **secondary**
+      lookup leaves its part `null` and sets `partial: true` instead of failing the whole view.
+    - No personal contact data is returned (no email, phone, plates or payout details); people are
+      shown by account ID plus their public profile (display name, photo, rating).
+
+    Downstream calls: Listing (`GET /admin/v1/listings`, `GET /api/v1/listings/{id}`,
+    `POST /admin/v1/listings/{id}/approve|reject`), Profile (`GET /api/v1/profiles/{accountId}`),
+    Booking (`GET /api/v1/bookings/{id}`), Payment (`GET /api/v1/payments/intents?bookingId=`,
+    `POST /admin/v1/payments/intents/{id}/refunds`), Review (`POST /admin/v1/reviews/{id}/hide`).
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - name: moderation
+  - name: bookings
+paths:
+  /admin/v1/moderation/listings:
+    get:
+      tags: [moderation]
+      operationId: getListingModerationQueue
+      description: |
+        ADMIN only. Listings in PENDING_REVIEW, oldest first, each enriched with its address,
+        photo and availability-rule counts and the host's public profile.
+      parameters:
+        - $ref: 'common.yaml#/components/parameters/Cursor'
+        - name: limit
+          in: query
+          required: false
+          description: Smaller maximum than the common limit because every item fans out.
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Page.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ModerationQueuePage' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/v1/moderation/listings/{listingId}/approve:
+    parameters: [{ $ref: '#/components/parameters/ListingId' }]
+    post:
+      tags: [moderation]
+      operationId: approveQueuedListing
+      description: |
+        ADMIN only. Forwards to Listing's approve (PENDING_REVIEW -> PUBLISHED). Listing's own
+        rules apply: 403 for the admin's own listing, 409 when not PENDING_REVIEW,
+        422 `host-suspended`.
+      requestBody:
+        required: false
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/ModerationNote' } }
+      responses:
+        '200':
+          description: Published.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ListingModerationOutcome' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/v1/moderation/listings/{listingId}/reject:
+    parameters: [{ $ref: '#/components/parameters/ListingId' }]
+    post:
+      tags: [moderation]
+      operationId: rejectQueuedListing
+      description: ADMIN only. Forwards to Listing's reject (PENDING_REVIEW -> REJECTED); the reason is shown to the host.
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/ModerationReason' } }
+      responses:
+        '200':
+          description: Rejected.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ListingModerationOutcome' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/v1/moderation/reviews/{reviewId}/hide:
+    parameters:
+      - { name: reviewId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [moderation]
+      operationId: hideReviewFromModeration
+      description: ADMIN only. Forwards to Review's hide (idempotent; aggregates are recomputed there).
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/HideReason' } }
+      responses:
+        '200':
+          description: Hidden.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ReviewModerationOutcome' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/v1/bookings/{bookingId}:
+    parameters: [{ $ref: '#/components/parameters/BookingId' }]
+    get:
+      tags: [bookings]
+      operationId: getBookingCase
+      description: |
+        ADMIN only. Support/dispute view of one booking: the booking, its payment intent (null
+        until Payment has created it), the listing, and the public profiles of driver and host.
+        404 when Booking does not know the booking.
+      responses:
+        '200':
+          description: Case view.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/BookingCase' } }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/v1/bookings/{bookingId}/refunds:
+    parameters: [{ $ref: '#/components/parameters/BookingId' }]
+    post:
+      tags: [bookings]
+      operationId: refundBookingPayment
+      description: |
+        ADMIN only. Manual (dispute) refund for a booking: looks up the booking's payment intent
+        and forwards to Payment's admin refund with the same Idempotency-Key (Payment stores the
+        result per admin and key). 404 `payment-not-found` when the booking has no intent;
+        Payment's 409 `illegal-payment-transition` and 422 `refund-exceeds-captured` pass through.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 100, pattern: '^[A-Za-z0-9_-]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/RefundRequest' } }
+      responses:
+        '200':
+          description: Refunded.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/PaymentFacts' } }
+        '400': { $ref: 'common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'common.yaml#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+components:
+  securitySchemes:
+    bearerAuth: { $ref: 'common.yaml#/components/securitySchemes/bearerAuth' }
+  parameters:
+    ListingId:
+      name: listingId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Unavailable:
+      description: A service this call depends on is unreachable, slow or failing (`<service>-unavailable`).
+      content:
+        application/problem+json: { schema: { $ref: 'common.yaml#/components/schemas/Problem' } }
+  schemas:
+    ModerationNote:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    ModerationReason:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    HideReason:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 255 }
+    RefundRequest:
+      type: object
+      required: [amount, reason]
+      additionalProperties: false
+      properties:
+        amount: { $ref: 'common.yaml#/components/schemas/Money' }
+        reason: { type: string, minLength: 1, maxLength: 255 }
+    PartySummary:
+      type: object
+      description: Public profile of an account (null fields when the person has not set them).
+      required: [accountId, ratingCount]
+      properties:
+        accountId: { type: string, format: uuid }
+        displayName: { type: [string, 'null'] }
+        photoUrl: { type: [string, 'null'], format: uri }
+        ratingAvg: { type: [string, 'null'] }
+        ratingCount: { type: integer, minimum: 0 }
+    ModerationQueueItem:
+      type: object
+      required: [listingId, title, status, pricePerHour, currency, partial]
+      properties:
+        listingId: { type: string, format: uuid }
+        title: { type: string }
+        status: { type: string, enum: [DRAFT, PENDING_REVIEW, PUBLISHED, PAUSED, ARCHIVED, REJECTED] }
+        pricePerHour: { $ref: 'common.yaml#/components/schemas/Money' }
+        currency: { $ref: 'common.yaml#/components/schemas/Currency' }
+        thumbnailUrl: { type: [string, 'null'], format: uri }
+        hostAccountId: { type: [string, 'null'], format: uuid }
+        address: { type: [string, 'null'] }
+        photoCount: { type: [integer, 'null'], minimum: 0 }
+        availabilityRuleCount: { type: [integer, 'null'], minimum: 0 }
+        lastChangedAt: { type: [string, 'null'], format: date-time, description: Listing updatedAt (when it entered review, unless edited since). }
+        host: { oneOf: [{ $ref: '#/components/schemas/PartySummary' }, { type: 'null' }] }
+        partial: { type: boolean, description: True when a detail lookup failed; the fields it feeds are null. }
+    ModerationQueuePage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ModerationQueueItem' } }
+        nextCursor: { type: [string, 'null'] }
+    ListingModerationOutcome:
+      type: object
+      required: [listingId, hostAccountId, status, updatedAt]
+      properties:
+        listingId: { type: string, format: uuid }
+        hostAccountId: { type: string, format: uuid }
+        status: { type: string, enum: [DRAFT, PENDING_REVIEW, PUBLISHED, PAUSED, ARCHIVED, REJECTED] }
+        rejectionReason: { type: [string, 'null'] }
+        updatedAt: { type: string, format: date-time }
+    ReviewModerationOutcome:
+      type: object
+      required: [reviewId, bookingId, direction, targetType, targetId, rating, hidden]
+      properties:
+        reviewId: { type: string, format: uuid }
+        bookingId: { type: string, format: uuid }
+        direction: { type: string, enum: [DRIVER_TO_LISTING, HOST_TO_DRIVER] }
+        targetType: { type: string, enum: [LISTING, DRIVER] }
+        targetId: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        hidden: { type: boolean, const: true }
+    BookingFacts:
+      type: object
+      required: [bookingId, listingId, driverAccountId, hostAccountId, status, startTime, endTime, totalAmount, currency, cancellationPolicy, createdAt, updatedAt]
+      properties:
+        bookingId: { type: string, format: uuid }
+        listingId: { type: string, format: uuid }
+        driverAccountId: { type: string, format: uuid }
+        hostAccountId: { type: string, format: uuid }
+        status: { type: string }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        pricePerHour: { oneOf: [{ $ref: 'common.yaml#/components/schemas/Money' }, { type: 'null' }] }
+        totalAmount: { $ref: 'common.yaml#/components/schemas/Money' }
+        currency: { $ref: 'common.yaml#/components/schemas/Currency' }
+        cancellationPolicy: { $ref: 'common.yaml#/components/schemas/CancellationPolicy' }
+        refundAmount: { oneOf: [{ $ref: 'common.yaml#/components/schemas/Money' }, { type: 'null' }] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaymentFacts:
+      type: object
+      required: [intentId, bookingId, amount, currency, status, refundedAmount, updatedAt]
+      properties:
+        intentId: { type: string, format: uuid }
+        bookingId: { type: string, format: uuid }
+        amount: { $ref: 'common.yaml#/components/schemas/Money' }
+        currency: { $ref: 'common.yaml#/components/schemas/Currency' }
+        status: { type: string, enum: [CREATED, AUTHORIZED, CAPTURED, FAILED, VOIDED, REFUNDED, PARTIALLY_REFUNDED] }
+        failureCode: { type: [string, 'null'] }
+        refundedAmount: { $ref: 'common.yaml#/components/schemas/Money' }
+        updatedAt: { type: string, format: date-time }
+    ListingFacts:
+      type: object
+      required: [listingId, title, status]
+      properties:
+        listingId: { type: string, format: uuid }
+        title: { type: string }
+        status: { type: string, enum: [DRAFT, PENDING_REVIEW, PUBLISHED, PAUSED, ARCHIVED, REJECTED] }
+        address: { type: [string, 'null'] }
+    BookingCase:
+      type: object
+      required: [booking, partial]
+      properties:
+        booking: { $ref: '#/components/schemas/BookingFacts' }
+        payment: { oneOf: [{ $ref: '#/components/schemas/PaymentFacts' }, { type: 'null' }], description: Null until Payment has created the intent (or when the lookup failed, see partial). }
+        listing: { oneOf: [{ $ref: '#/components/schemas/ListingFacts' }, { type: 'null' }] }
+        driver: { oneOf: [{ $ref: '#/components/schemas/PartySummary' }, { type: 'null' }] }
+        host: { oneOf: [{ $ref: '#/components/schemas/PartySummary' }, { type: 'null' }] }
+        partial: { type: boolean, description: True when a secondary lookup (payment, listing, profiles) failed. }

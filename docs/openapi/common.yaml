@@ -1,0 +1,133 @@
+openapi: 3.1.0
+info:
+  title: ParkSmart shared API components
+  version: 1.0.0
+  description: |
+    Components referenced by every service contract. Not a deployable API.
+
+    Conventions (all services):
+    - Base path `/api/v1` for public endpoints, `/admin/v1` for ADMIN-only endpoints,
+      `/internal/v1` for service-to-service calls (the gateway never routes `/internal/**`).
+    - Auth: `Authorization: Bearer <JWT>` (RS256, issued by Identity, verified via JWKS).
+      Claims: `sub` (accountId), `roles` (DRIVER|HOST|ADMIN), `iss`, `aud`, `exp`, `iat`, `jti`.
+    - Money is a decimal **string** with up to 2 fraction digits plus an ISO-4217 `currency` (INR in MVP).
+    - Timestamps are RFC 3339 `date-time`; the server stores and returns UTC.
+    - Errors are RFC 7807 `application/problem+json`; `type` is `https://parksmart.dev/problems/<slug>`.
+    - Lists use cursor pagination: `?cursor=<opaque>&limit=<1..100, default 20>`.
+    - Every request may send `X-Correlation-Id`; it is echoed back and propagated to events.
+paths: {}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string, maxLength: 512 }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, maxLength: 64 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: ETag from the last GET (optimistic locking). Stale value returns 412.
+      schema: { type: string }
+  headers:
+    ETag:
+      description: Opaque version of the resource; send back in If-Match.
+      schema: { type: string }
+    RetryAfter:
+      description: Seconds until the client may retry.
+      schema: { type: integer }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri, examples: ["https://parksmart.dev/problems/booking-overlap"] }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string }
+        instance: { type: string }
+        correlationId: { type: string }
+        errors:
+          type: array
+          description: Field-level validation errors (present on 400 validation-failed).
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+    Money:
+      type: string
+      pattern: '^\d{1,8}(\.\d{1,2})?$'
+      examples: ["120.00"]
+    Currency:
+      type: string
+      enum: [INR]
+    GeoPoint:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+    VehicleType:
+      type: string
+      enum: [MOTORCYCLE, HATCHBACK, SEDAN, SUV, VAN, TRUCK]
+      description: Ordered by size; a listing's maxVehicleType admits that type and smaller.
+    CancellationPolicy:
+      type: string
+      enum: [FLEXIBLE, MODERATE, STRICT]
+      description: |
+        FLEXIBLE: 100% refund if cancelled >= 1h before start, else 0%.
+        MODERATE: 100% if >= 24h before start, 50% if >= 1h, else 0%.
+        STRICT:   50% if >= 24h before start, else 0%.
+        Host-initiated cancellation and host decline always refund 100%.
+  responses:
+    BadRequest:
+      description: Validation failed (`validation-failed`) or malformed request.
+      content:
+        application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } }
+    Unauthorized:
+      description: Missing or invalid access token.
+      content:
+        application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } }
+    Forbidden:
+      description: Authenticated but not allowed (wrong role or not the owner).
+      content:
+        application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } }
+    NotFound:
+      description: Resource does not exist or is not visible to the caller.
+      content:
+        application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } }
+    Conflict:
+      description: State conflict (e.g. illegal state transition, overlap, duplicate).
+      content:
+        application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } }
+    PreconditionFailed:
+      description: If-Match did not match the current ETag.
+      content:
+        application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } }
+    Unprocessable:
+      description: Request is well-formed but violates a business rule.
+      content:
+        application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } }
+    TooManyRequests:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+      content:
+        application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } }

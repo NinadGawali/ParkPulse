@@ -1,0 +1,25 @@
+{
+  "type" : "object",
+  "properties" : {
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "reason" : {
+      "type" : "string"
+    },
+    "rejectedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "hostAccountId", "listingId", "reason", "rejectedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/listing.listing.v1/ListingRejected.v1.schema.json",
+  "title" : "ListingRejected v1",
+  "x-topic" : "listing.listing.v1"
+}

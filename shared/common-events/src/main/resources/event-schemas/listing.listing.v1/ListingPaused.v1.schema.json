@@ -1,0 +1,22 @@
+{
+  "type" : "object",
+  "properties" : {
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "pausedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "hostAccountId", "listingId", "pausedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/listing.listing.v1/ListingPaused.v1.schema.json",
+  "title" : "ListingPaused v1",
+  "x-topic" : "listing.listing.v1"
+}

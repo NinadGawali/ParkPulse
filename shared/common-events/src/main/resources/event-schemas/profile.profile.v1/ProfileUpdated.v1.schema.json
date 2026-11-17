@@ -1,0 +1,27 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "displayName" : {
+      "type" : [ "string", "null" ]
+    },
+    "hasPhoto" : {
+      "type" : "boolean"
+    },
+    "photoUrl" : {
+      "type" : [ "string", "null" ]
+    },
+    "updatedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "accountId", "displayName", "hasPhoto", "photoUrl", "updatedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/profile.profile.v1/ProfileUpdated.v1.schema.json",
+  "title" : "ProfileUpdated v1",
+  "x-topic" : "profile.profile.v1"
+}

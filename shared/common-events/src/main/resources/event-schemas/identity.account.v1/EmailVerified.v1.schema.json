@@ -1,0 +1,18 @@
+{
+  "type" : "object",
+  "properties" : {
+    "accountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "verifiedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    }
+  },
+  "required" : [ "accountId", "verifiedAt" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/identity.account.v1/EmailVerified.v1.schema.json",
+  "title" : "EmailVerified v1",
+  "x-topic" : "identity.account.v1"
+}

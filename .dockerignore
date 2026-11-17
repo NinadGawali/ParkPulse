@@ -1,0 +1,13 @@
+# Keep secrets and build output out of every image build context.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+.git
+.claude
+.idea
+.vscode
+**/target
+**/build
+*.log

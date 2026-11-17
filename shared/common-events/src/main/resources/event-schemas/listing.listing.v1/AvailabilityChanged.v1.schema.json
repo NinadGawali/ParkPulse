@@ -1,0 +1,59 @@
+{
+  "type" : "object",
+  "properties" : {
+    "availabilityRules" : {
+      "type" : "array",
+      "items" : {
+        "type" : "object",
+        "properties" : {
+          "dayOfWeek" : {
+            "type" : "string"
+          },
+          "endTime" : {
+            "type" : "string"
+          },
+          "startTime" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "dayOfWeek", "endTime", "startTime" ],
+        "additionalProperties" : false
+      }
+    },
+    "blackouts" : {
+      "type" : "array",
+      "items" : {
+        "type" : "object",
+        "properties" : {
+          "blackoutId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "end" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "start" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        },
+        "required" : [ "blackoutId", "end", "start" ],
+        "additionalProperties" : false
+      }
+    },
+    "changedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "availabilityRules", "blackouts", "changedAt", "listingId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/listing.listing.v1/AvailabilityChanged.v1.schema.json",
+  "title" : "AvailabilityChanged v1",
+  "x-topic" : "listing.listing.v1"
+}

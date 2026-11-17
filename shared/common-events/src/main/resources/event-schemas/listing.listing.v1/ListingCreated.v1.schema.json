@@ -1,0 +1,22 @@
+{
+  "type" : "object",
+  "properties" : {
+    "createdAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "listingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "createdAt", "hostAccountId", "listingId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/listing.listing.v1/ListingCreated.v1.schema.json",
+  "title" : "ListingCreated v1",
+  "x-topic" : "listing.listing.v1"
+}

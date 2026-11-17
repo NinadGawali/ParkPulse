@@ -1,0 +1,65 @@
+# Identity Service. Every host, credential and secret comes from the environment (12-factor);
+# missing values fail startup instead of falling back to defaults.
+spring:
+  application:
+    name: identity-service
+  datasource:
+    url: ${IDENTITY_DB_URL}
+    username: ${IDENTITY_DB_USER}
+    password: ${IDENTITY_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${IDENTITY_DB_POOL_SIZE:10}
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        delivery.timeout.ms: 30000
+  mvc:
+    problemdetails:
+      enabled: false   # common-web provides the handler
+
+server:
+  port: ${IDENTITY_PORT:8081}
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+parksmart:
+  identity:
+    issuer: ${IDENTITY_ISSUER}
+    audience: parksmart-api
+    access-token-ttl: 15m
+    refresh-token-ttl: 30d
+    code-pepper: ${IDENTITY_CODE_PEPPER}
+    jwt:
+      private-key-pem: ${IDENTITY_JWT_PRIVATE_KEY_PEM:}
+      generate-ephemeral-key: false
+    dev-log-verification-codes: false
+  security:
+    jwt:
+      issuer: ${parksmart.identity.issuer}
+      audience: ${parksmart.identity.audience}
+  kafka:
+    partitions: 3
+    replication-factor: 1

@@ -1,0 +1,39 @@
+{
+  "type" : "object",
+  "properties" : {
+    "authorAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "bookingId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "direction" : {
+      "type" : "string"
+    },
+    "rating" : {
+      "type" : "integer"
+    },
+    "reviewId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "submittedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "targetId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "targetType" : {
+      "type" : "string"
+    }
+  },
+  "required" : [ "authorAccountId", "bookingId", "direction", "rating", "reviewId", "submittedAt", "targetId", "targetType" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/review.review.v1/ReviewSubmitted.v1.schema.json",
+  "title" : "ReviewSubmitted v1",
+  "x-topic" : "review.review.v1"
+}

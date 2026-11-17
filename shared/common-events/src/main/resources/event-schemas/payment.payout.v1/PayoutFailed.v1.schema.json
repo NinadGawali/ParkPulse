@@ -1,0 +1,31 @@
+{
+  "type" : "object",
+  "properties" : {
+    "amount" : {
+      "type" : "string"
+    },
+    "currency" : {
+      "type" : "string"
+    },
+    "failedAt" : {
+      "type" : "string",
+      "format" : "date-time"
+    },
+    "failureReason" : {
+      "type" : "string"
+    },
+    "hostAccountId" : {
+      "type" : "string",
+      "format" : "uuid"
+    },
+    "payoutId" : {
+      "type" : "string",
+      "format" : "uuid"
+    }
+  },
+  "required" : [ "amount", "currency", "failedAt", "failureReason", "hostAccountId", "payoutId" ],
+  "additionalProperties" : false,
+  "$id" : "https://parksmart.dev/event-schemas/payment.payout.v1/PayoutFailed.v1.schema.json",
+  "title" : "PayoutFailed v1",
+  "x-topic" : "payment.payout.v1"
+}
